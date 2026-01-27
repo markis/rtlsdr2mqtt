@@ -1,0 +1,4 @@
+coverage.*
+
+# Binary output
+/rtlsdr2mqtt

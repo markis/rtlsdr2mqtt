@@ -1,0 +1,35 @@
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: mosquitto
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_logs:/mosquitto/log
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+
+  rtlsdr2mqtt:
+    build:
+      context: ..
+      dockerfile: Containerfile
+    container_name: rtlsdr2mqtt
+    restart: unless-stopped
+    depends_on:
+      - mosquitto
+    volumes:
+      - ./sample-config.yaml:/etc/rtlsdr2mqtt.yaml:ro
+      - ./mock/rtl_tcp:/usr/local/bin/rtl_tcp:ro
+      - ./mock/rtlamr:/usr/local/bin/rtlamr:ro
+    environment:
+      - TZ=America/New_York
+    # For real usage, you would need:
+    # devices:
+    #   - /dev/bus/usb:/dev/bus/usb
+    # privileged: true
+
+volumes:
+  mosquitto_data:
+  mosquitto_logs:

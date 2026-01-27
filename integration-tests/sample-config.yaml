@@ -1,0 +1,44 @@
+general:
+  sleep_for: 60
+  verbosity: info
+  health_check_enabled: true
+
+sdr:
+  usb_device: ""
+  freq_correction: 0
+  gain_mode: auto
+  gain: 0
+  agc_enabled: true
+
+mqtt:
+  host: mosquitto
+  port: 1883
+  user: ""
+  password: ""
+  base_topic: meters
+  tls:
+    enabled: false
+    insecure: false
+  homeassistant:
+    enabled: true
+    discovery_prefix: homeassistant
+    status_topic: homeassistant/status
+
+meters:
+  - id: "33333333"
+    protocol: scm+
+    name: Water Meter
+    format: "######.###"
+    unit_of_measurement: "m³"
+    icon: mdi:water
+    device_class: water
+    state_class: total_increasing
+
+  - id: "44444444"
+    protocol: r900
+    name: Gas Meter
+    format: "#####.###"
+    unit_of_measurement: "ft³"
+    icon: mdi:fire
+    device_class: gas
+    state_class: total_increasing

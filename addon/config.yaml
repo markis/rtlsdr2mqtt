@@ -1,0 +1,84 @@
+name: "RTL-SDR to MQTT"
+version: "1.0.0"
+slug: rtlsdr2mqtt
+description: "Read smart utility meters via RTL-SDR and publish to MQTT with Home Assistant auto-discovery"
+url: "https://github.com/markis/rtlsdr2mqtt"
+arch:
+  - amd64
+  - aarch64
+  - armv7
+startup: application
+boot: auto
+usb: true
+udev: true
+services:
+  - mqtt:need
+options:
+  general:
+    sleep_for: 0
+    verbosity: info
+    health_check_enabled: true
+  sdr:
+    usb_device: ""
+    freq_correction: 0
+    gain_mode: auto
+    gain: 0
+    agc_enabled: true
+  mqtt:
+    host: ""
+    port: 1883
+    user: ""
+    password: ""
+    base_topic: meters
+    tls:
+      enabled: false
+      insecure: false
+      ca: ""
+      cert: ""
+      keyfile: ""
+    homeassistant:
+      enabled: true
+      discovery_prefix: homeassistant
+      status_topic: homeassistant/status
+  meters: []
+schema:
+  general:
+    sleep_for: int
+    verbosity: list(debug|info|warning|error|none)
+    health_check_enabled: bool
+  sdr:
+    usb_device: str?
+    freq_correction: int
+    gain_mode: list(auto|manual)
+    gain: int
+    agc_enabled: bool
+  mqtt:
+    host: str?
+    port: port
+    user: str?
+    password: password?
+    base_topic: str
+    tls:
+      enabled: bool
+      insecure: bool
+      ca: str?
+      cert: str?
+      keyfile: str?
+    homeassistant:
+      enabled: bool
+      discovery_prefix: str
+      status_topic: str
+  meters:
+    - id: str
+      protocol: list(scm|scm+|idm|netidm|r900|r900bcd)
+      name: str
+      format: str?
+      unit_of_measurement: str?
+      icon: str?
+      device_class: list(none|energy|gas|water)?
+      state_class: list(measurement|total|total_increasing)?
+      expire_after: int?
+      force_update: bool?
+map:
+  - ssl
+image: ghcr.io/markis/rtlsdr2mqtt

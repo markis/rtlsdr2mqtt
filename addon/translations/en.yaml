@@ -1,0 +1,13 @@
+configuration:
+  general:
+    name: General Settings
+    description: General application settings
+  sdr:
+    name: SDR Settings
+    description: RTL-SDR device configuration
+  mqtt:
+    name: MQTT Settings
+    description: MQTT broker connection settings
+  meters:
+    name: Meters
+    description: List of meters to monitor
