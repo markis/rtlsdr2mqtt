@@ -23,7 +23,7 @@ test-coverage: ## Run tests with coverage
 	go tool cover -html=coverage.out -o coverage.html
 
 docker: ## Build Docker image
-	docker build -t rtlsdr2mqtt:$(VERSION) -f Containerfile .
+	docker build --build-arg VERSION=$(VERSION) -t rtlsdr2mqtt:$(VERSION) -f Containerfile .
 	docker tag rtlsdr2mqtt:$(VERSION) rtlsdr2mqtt:latest
 
 docker-test: ## Build and test with docker compose

@@ -6,9 +6,11 @@ import (
 	"runtime"
 )
 
+// Version represents the current version of the application.
+// This is set at build time via ldflags: -ldflags "-X rtlsdr2mqtt/pkg/version.Version=v1.2.3"
+var Version = "dev"
+
 const (
-	// Version represents the current version of the application.
-	Version = "1.0.0"
 	// ApplicationName is the name of the application.
 	ApplicationName = "rtlsdr2mqtt"
 )

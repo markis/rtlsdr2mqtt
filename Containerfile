@@ -5,6 +5,7 @@ ARG TARGETPLATFORM
 ARG BUILDPLATFORM
 ARG TARGETARCH
 ARG TARGETVARIANT
+ARG VERSION=dev
 
 # Install base dependencies
 RUN --mount=type=cache,target=/var/cache/apk,sharing=locked \
@@ -46,7 +47,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 COPY . .
 RUN --mount=type=cache,target=/go/pkg/mod \
   --mount=type=cache,target=/root/.cache/go-build \
-  . /tmp/buildenv && go build -a -o rtlsdr2mqtt ./cmd/rtlsdr2mqtt
+  . /tmp/buildenv && go build -a -ldflags "-X rtlsdr2mqtt/pkg/version.Version=${VERSION}" -o rtlsdr2mqtt ./cmd/rtlsdr2mqtt
 
 # Production stage
 FROM alpine:3.21

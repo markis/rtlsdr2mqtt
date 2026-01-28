@@ -34,14 +34,19 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Get latest tag (for workflow_run trigger)
+      - name: Get version tag
         id: get_tag
-        if: github.event_name == 'workflow_run'
         run: |
-          git fetch --tags
-          LATEST_TAG=$(git describe --tags --abbrev=0)
-          echo "tag=${LATEST_TAG}" >> $GITHUB_OUTPUT
-          echo "Latest tag: ${LATEST_TAG}"
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            git fetch --tags
+            VERSION=$(git describe --tags --abbrev=0)
+          elif [ "${{ github.event_name }}" = "push" ]; then
+            VERSION=${GITHUB_REF#refs/tags/}
+          else
+            VERSION=$(git describe --tags --always --dirty)
+          fi
+          echo "tag=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Version: ${VERSION}"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -64,8 +69,8 @@ jobs:
             latest=auto
           tags: |
             # For workflow_run, use the latest git tag
-            type=raw,value=${{ steps.get_tag.outputs.tag }},enable=${{ github.event_name == 'workflow_run' }}
-            type=raw,value=latest,enable=${{ github.event_name == 'workflow_run' }}
+            type=raw,value=${{ steps.get_tag.outputs.tag }},enable=${{ github.event_name == 'workflow_run' || github.event_name == 'push' }}
+            type=raw,value=latest,enable=${{ github.event_name == 'workflow_run' || github.event_name == 'push' }}
             # For direct tag pushes
             type=semver,pattern={{version}},enable=${{ github.event_name == 'push' }}
             type=semver,pattern={{major}}.{{minor}},enable=${{ github.event_name == 'push' }}
@@ -82,6 +87,8 @@ jobs:
           context: .
           platforms: ${{ env.PLATFORMS }}
           file: Containerfile
+          build-args: |
+            VERSION=${{ steps.get_tag.outputs.tag }}
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
