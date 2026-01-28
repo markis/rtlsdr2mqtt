@@ -7,7 +7,7 @@ import (
 )
 
 // Version represents the current version of the application.
-// This is set at build time via ldflags: -ldflags "-X rtlsdr2mqtt/pkg/version.Version=v1.2.3"
+// This is set at build time via ldflags (e.g. -X rtlsdr2mqtt/pkg/version.Version=v1.2.3).
 var Version = "dev"
 
 const (
