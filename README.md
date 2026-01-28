@@ -108,9 +108,9 @@ meters:
 | `name` | Display name | `Smart Meter` |
 | `format` | Number format mask (e.g., `######.###`) | none |
 | `unit_of_measurement` | Unit for Home Assistant | `kWh` |
-| `icon` | MDI icon | `mdi:flash` |
-| `device_class` | HA device class (`energy`, `gas`, `water`) | `energy` |
-| `state_class` | HA state class | `total_increasing` |
+| `icon` | [Icon for Home Assistant](https://pictogrammers.com/library/mdi/) | `mdi:flash` |
+| `device_class` | [Home Assistant device class](https://www.home-assistant.io/integrations/sensor/#device-class) (`energy`, `gas`, `water`) | `energy` |
+| `state_class` | [Home Assistant state class](https://developers.home-assistant.io/docs/core/entity/sensor/#available-state-classes) | `total_increasing` |
 | `expire_after` | Seconds until unavailable | 0 (disabled) |
 | `force_update` | Always publish updates | `false` |
 
