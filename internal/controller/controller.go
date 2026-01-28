@@ -99,21 +99,20 @@ func (c *Controller) Run() error {
 	// Setup signal handling
 	c.setupSignalHandling(ctx)
 
+	// Set up MQTT handlers before connecting so onConnect fires on initial connection
+	c.setupMQTTHandlers()
+
 	// Connect to MQTT
 	if err := c.mqttClient.Connect(); err != nil {
 		return fmt.Errorf("failed to connect to MQTT: %w", err)
 	}
 
-	// Set up MQTT handlers
-	c.setupMQTTHandlers()
-
 	// Subscribe to Home Assistant status topic for restart detection
+	// This triggers publishDiscovery() if HA has a retained "online" status,
+	// but that's fine - discovery messages are idempotent (retained, overwritten)
 	if err := c.mqttClient.Subscribe(c.config.MQTT.HomeAssistant.StatusTopic, 1, c.handleHAStatus); err != nil {
 		c.logger.Warn("Failed to subscribe to HA status topic", "topic", c.config.MQTT.HomeAssistant.StatusTopic, "error", err)
 	}
-
-	// Publish discovery messages
-	c.publishDiscovery()
 
 	// Publish initial status (retained so subscribers see current state)
 	statusTopic := discovery.GenerateStatusTopic(c.config.MQTT.BaseTopic)
@@ -183,7 +182,6 @@ func (c *Controller) setupSignalHandling(ctx context.Context) {
 // setupMQTTHandlers configures MQTT event handlers.
 func (c *Controller) setupMQTTHandlers() {
 	c.mqttClient.SetOnConnectHandler(func() {
-		c.logger.Info("MQTT client connected")
 		// Re-publish discovery on reconnect
 		c.publishDiscovery()
 	})
