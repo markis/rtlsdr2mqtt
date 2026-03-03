@@ -93,6 +93,13 @@ linters:
     - zerologlint
 
   settings:
+    gofumpt:
+      module-path: rtlsdr2mqtt
+      extra-rules: false
+
+    goimports:
+      local-prefixes: rtlsdr2mqtt
+
     errcheck:
       check-type-assertions: true
       check-blank: true
@@ -223,5 +230,4 @@ formatters:
       module-path: rtlsdr2mqtt
       extra-rules: false
     goimports:
-      local-prefixes:
-        - github.com/netwrix/dspm
+      local-prefixes: rtlsdr2mqtt

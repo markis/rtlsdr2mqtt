@@ -12,6 +12,11 @@ trim_trailing_whitespace = true
 indent_style = space
 indent_size = 2
 
+# LICENSE file (standard legal text, don't enforce formatting)
+[LICENSE]
+indent_style = unset
+indent_size = unset
+
 # Go files
 [*.go]
 indent_style = tab
@@ -49,6 +54,6 @@ indent_style = space
 indent_size = 2
 
 # Configuration files
-[*.{toml,ini,cfg}]
+[*.{toml,ini,cfg,conf}]
 indent_style = space
 indent_size = 2
