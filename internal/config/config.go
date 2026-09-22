@@ -166,7 +166,7 @@ func applyDefaults(config *Config) *Config {
 		if config.Meters[i].UnitOfMeasurement == "" {
 			// Set default based on device class
 			switch config.Meters[i].DeviceClass {
-			case "energy":
+			case deviceClassEnergy:
 				config.Meters[i].UnitOfMeasurement = defaultUnitMeasurement
 			case "gas":
 				config.Meters[i].UnitOfMeasurement = "m³"
@@ -251,7 +251,7 @@ func normalizeMeters(config *Config) *Config {
 
 		// Set default state class if not provided
 		if config.Meters[i].StateClass == "" {
-			config.Meters[i].StateClass = "total_increasing"
+			config.Meters[i].StateClass = defaultStateClass
 		}
 	}
 

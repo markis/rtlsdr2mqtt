@@ -9,13 +9,18 @@ import (
 )
 
 const (
-	testVerbosity         = "info"
-	testBaseTopic         = "meters"
-	testStateClass        = "total_increasing"
-	testUnitMeasurement   = "kWh"
-	testDeviceClass       = "energy"
-	testHAStatusTopic     = "homeassistant/status"
-	testHADiscoveryPrefix = "homeassistant"
+	testVerbosity             = "info"
+	testBaseTopic             = "meters"
+	testStateClass            = "total_increasing"
+	testUnitMeasurement       = "kWh"
+	testDeviceClass           = "energy"
+	testHAStatusTopic         = "homeassistant/status"
+	testHADiscoveryPrefix     = "homeassistant"
+	testMeterName             = "Test Meter"
+	testProtocol              = "scm+"
+	testInvalidValue          = "invalid"
+	testStateClassMeasurement = "measurement"
+	testMQTTHost              = "localhost"
 )
 
 func TestDefaultValues(t *testing.T) {
@@ -52,7 +57,7 @@ func TestDefaultValues(t *testing.T) {
 func TestMeterConfigDefaults(t *testing.T) {
 	meter := NewMeterConfig()
 
-	if meter.Protocol != "scm+" {
+	if meter.Protocol != testProtocol {
 		t.Errorf("Expected protocol 'scm+', got '%s'", meter.Protocol)
 	}
 
@@ -141,7 +146,7 @@ func TestGetIntFromString(t *testing.T) {
 		{"123", 10, 123},
 		{"0", 10, 0},
 		{"-5", 10, -5},
-		{"invalid", 10, 10},
+		{testInvalidValue, 10, 10},
 		{"12.34", 10, 10},
 	}
 
@@ -177,8 +182,8 @@ func TestGetBoolFromString(t *testing.T) {
 		{"No", true, false},
 		{"off", true, false},
 		{"Off", true, false},
-		{"invalid", true, true},
-		{"invalid", false, false},
+		{testInvalidValue, true, true},
+		{testInvalidValue, false, false},
 	}
 
 	for _, tt := range tests {
@@ -196,7 +201,7 @@ func TestValidProtocols(t *testing.T) {
 		t.Error("ValidProtocols returned empty slice")
 	}
 
-	expectedProtocols := []string{"scm", "scm+", "idm", "netidm", "r900", "r900bcd"}
+	expectedProtocols := []string{"scm", testProtocol, "idm", "netidm", "r900", "r900bcd"}
 	if len(protocols) != len(expectedProtocols) {
 		t.Errorf("Expected %d protocols, got %d", len(expectedProtocols), len(protocols))
 	}
@@ -215,7 +220,7 @@ func TestValidDeviceClasses(t *testing.T) {
 		t.Error("ValidDeviceClasses returned empty slice")
 	}
 
-	expectedClasses := []string{"none", "current", "energy", "gas", "power", "water"}
+	expectedClasses := []string{"none", "current", testDeviceClass, "gas", "power", "water"}
 	if len(classes) != len(expectedClasses) {
 		t.Errorf("Expected %d device classes, got %d", len(expectedClasses), len(classes))
 	}
@@ -228,7 +233,7 @@ func TestValidStateClasses(t *testing.T) {
 		t.Error("ValidStateClasses returned empty slice")
 	}
 
-	expectedClasses := []string{"measurement", "total", "total_increasing"}
+	expectedClasses := []string{testStateClassMeasurement, "total", testStateClass}
 	if len(classes) != len(expectedClasses) {
 		t.Errorf("Expected %d state classes, got %d", len(expectedClasses), len(classes))
 	}
@@ -252,8 +257,8 @@ func TestApplyDefaults(t *testing.T) {
 		Meters: []MeterConfig{
 			{
 				ID:          "12345",
-				Name:        "Test Meter",
-				DeviceClass: "energy",
+				Name:        testMeterName,
+				DeviceClass: testDeviceClass,
 			},
 			{
 				ID:          "67890",
@@ -314,12 +319,12 @@ func TestNormalizeMeters(t *testing.T) {
 		Meters: []MeterConfig{
 			{
 				ID:   "  12345  ",
-				Name: "Test Meter",
+				Name: testMeterName,
 			},
 			{
 				ID:         "67890",
 				Name:       "Test Meter 2",
-				StateClass: "measurement",
+				StateClass: testStateClassMeasurement,
 			},
 		},
 	}
@@ -337,7 +342,7 @@ func TestNormalizeMeters(t *testing.T) {
 	}
 
 	// Check existing state class is preserved
-	if result.Meters[1].StateClass != "measurement" {
+	if result.Meters[1].StateClass != testStateClassMeasurement {
 		t.Errorf("Expected state class 'measurement', got '%s'", result.Meters[1].StateClass)
 	}
 }
@@ -353,10 +358,10 @@ func TestValidateMeter(t *testing.T) {
 			name: "valid meter",
 			meter: &MeterConfig{
 				ID:          "12345",
-				Name:        "Test Meter",
-				Protocol:    "scm+",
-				DeviceClass: "energy",
-				StateClass:  "total_increasing",
+				Name:        testMeterName,
+				Protocol:    testProtocol,
+				DeviceClass: testDeviceClass,
+				StateClass:  testStateClass,
 			},
 			expectErr: false,
 		},
@@ -364,8 +369,8 @@ func TestValidateMeter(t *testing.T) {
 			name: "empty ID",
 			meter: &MeterConfig{
 				ID:       "",
-				Name:     "Test Meter",
-				Protocol: "scm+",
+				Name:     testMeterName,
+				Protocol: testProtocol,
 			},
 			expectErr: true,
 			errType:   ErrMeterIDEmpty,
@@ -375,7 +380,7 @@ func TestValidateMeter(t *testing.T) {
 			meter: &MeterConfig{
 				ID:       "12345",
 				Name:     "",
-				Protocol: "scm+",
+				Protocol: testProtocol,
 			},
 			expectErr: true,
 			errType:   ErrMeterNameEmpty,
@@ -384,7 +389,7 @@ func TestValidateMeter(t *testing.T) {
 			name: "empty protocol",
 			meter: &MeterConfig{
 				ID:       "12345",
-				Name:     "Test Meter",
+				Name:     testMeterName,
 				Protocol: "",
 			},
 			expectErr: true,
@@ -394,8 +399,8 @@ func TestValidateMeter(t *testing.T) {
 			name: "invalid protocol",
 			meter: &MeterConfig{
 				ID:       "12345",
-				Name:     "Test Meter",
-				Protocol: "invalid",
+				Name:     testMeterName,
+				Protocol: testInvalidValue,
 			},
 			expectErr: true,
 		},
@@ -403,9 +408,9 @@ func TestValidateMeter(t *testing.T) {
 			name: "invalid device class",
 			meter: &MeterConfig{
 				ID:          "12345",
-				Name:        "Test Meter",
-				Protocol:    "scm+",
-				DeviceClass: "invalid",
+				Name:        testMeterName,
+				Protocol:    testProtocol,
+				DeviceClass: testInvalidValue,
 			},
 			expectErr: true,
 		},
@@ -413,9 +418,9 @@ func TestValidateMeter(t *testing.T) {
 			name: "invalid state class",
 			meter: &MeterConfig{
 				ID:         "12345",
-				Name:       "Test Meter",
-				Protocol:   "scm+",
-				StateClass: "invalid",
+				Name:       testMeterName,
+				Protocol:   testProtocol,
+				StateClass: testInvalidValue,
 			},
 			expectErr: true,
 		},

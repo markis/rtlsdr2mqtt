@@ -9,10 +9,16 @@ import (
 	"rtlsdr2mqtt/pkg/version"
 )
 
+const (
+	testMeterName   = "Test Meter"
+	testBaseTopic   = "rtlamr"
+	testNestedTopic = "test/topic"
+)
+
 func TestGenerateDiscoveryPayload(t *testing.T) {
 	meter := &config.MeterConfig{
 		ID:                "12345678",
-		Name:              "Test Meter",
+		Name:              testMeterName,
 		UnitOfMeasurement: "kWh",
 		Icon:              "mdi:meter-electric",
 		DeviceClass:       "energy",
@@ -21,7 +27,7 @@ func TestGenerateDiscoveryPayload(t *testing.T) {
 		ForceUpdate:       true,
 	}
 
-	baseTopic := "rtlamr"
+	baseTopic := testBaseTopic
 	payload := GenerateDiscoveryPayload(baseTopic, meter)
 
 	t.Run("device_info", func(t *testing.T) {
@@ -196,7 +202,7 @@ func TestGenerateDiscoveryPayloadMinimalConfig(t *testing.T) {
 func TestGenerateDiscoveryPayloadDeviceClassNone(t *testing.T) {
 	meter := &config.MeterConfig{
 		ID:          "11111111",
-		Name:        "Test Meter",
+		Name:        testMeterName,
 		DeviceClass: "none",
 	}
 
@@ -251,12 +257,12 @@ func TestGenerateStateTopic(t *testing.T) {
 		expected  string
 	}{
 		{
-			baseTopic: "rtlamr",
+			baseTopic: testBaseTopic,
 			meterID:   "12345678",
 			expected:  "rtlamr/12345678/state",
 		},
 		{
-			baseTopic: "test/topic",
+			baseTopic: testNestedTopic,
 			meterID:   "99999999",
 			expected:  "test/topic/99999999/state",
 		},
@@ -278,12 +284,12 @@ func TestGenerateAttributesTopic(t *testing.T) {
 		expected  string
 	}{
 		{
-			baseTopic: "rtlamr",
+			baseTopic: testBaseTopic,
 			meterID:   "12345678",
 			expected:  "rtlamr/12345678/attributes",
 		},
 		{
-			baseTopic: "test/topic",
+			baseTopic: testNestedTopic,
 			meterID:   "99999999",
 			expected:  "test/topic/99999999/attributes",
 		},
@@ -304,11 +310,11 @@ func TestGenerateStatusTopic(t *testing.T) {
 		expected  string
 	}{
 		{
-			baseTopic: "rtlamr",
+			baseTopic: testBaseTopic,
 			expected:  "rtlamr/status",
 		},
 		{
-			baseTopic: "test/topic",
+			baseTopic: testNestedTopic,
 			expected:  "test/topic/status",
 		},
 	}
@@ -325,10 +331,10 @@ func TestGenerateStatusTopic(t *testing.T) {
 func TestGenerateDiscoveryPayloadValueTemplate(t *testing.T) {
 	meter := &config.MeterConfig{
 		ID:   "12345678",
-		Name: "Test Meter",
+		Name: testMeterName,
 	}
 
-	payload := GenerateDiscoveryPayload("rtlamr", meter)
+	payload := GenerateDiscoveryPayload(testBaseTopic, meter)
 	reading := payload.Components["12345678_reading"]
 
 	expectedTemplate := "{{ value_json.reading|float }}"
@@ -340,10 +346,10 @@ func TestGenerateDiscoveryPayloadValueTemplate(t *testing.T) {
 func TestGenerateDiscoveryPayloadLastSeenValueTemplate(t *testing.T) {
 	meter := &config.MeterConfig{
 		ID:   "12345678",
-		Name: "Test Meter",
+		Name: testMeterName,
 	}
 
-	payload := GenerateDiscoveryPayload("rtlamr", meter)
+	payload := GenerateDiscoveryPayload(testBaseTopic, meter)
 	lastSeen := payload.Components["12345678_lastseen"]
 
 	expectedTemplate := "{{ value_json.lastseen }}"
@@ -355,10 +361,10 @@ func TestGenerateDiscoveryPayloadLastSeenValueTemplate(t *testing.T) {
 func TestGenerateDiscoveryPayloadSupportURL(t *testing.T) {
 	meter := &config.MeterConfig{
 		ID:   "12345678",
-		Name: "Test Meter",
+		Name: testMeterName,
 	}
 
-	payload := GenerateDiscoveryPayload("rtlamr", meter)
+	payload := GenerateDiscoveryPayload(testBaseTopic, meter)
 
 	expectedURL := "https://github.com/markis/rtlsdr2mqtt"
 	if payload.Origin.SupportURL != expectedURL {

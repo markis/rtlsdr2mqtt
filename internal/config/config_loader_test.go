@@ -58,7 +58,7 @@ meters:
 		t.Errorf("Expected verbosity 'info', got '%s'", config.General.Verbosity)
 	}
 
-	if config.MQTT.Host != "localhost" {
+	if config.MQTT.Host != testMQTTHost {
 		t.Errorf("Expected MQTT host 'localhost', got '%s'", config.MQTT.Host)
 	}
 
@@ -390,12 +390,12 @@ func TestFileExists(t *testing.T) {
 
 func TestValidateConfigEmptyMeterID(t *testing.T) {
 	config := &Config{
-		MQTT: MQTTConfig{Host: "localhost"},
+		MQTT: MQTTConfig{Host: testMQTTHost},
 		Meters: []MeterConfig{
 			{
 				ID:       "",
-				Name:     "Test Meter",
-				Protocol: "scm+",
+				Name:     testMeterName,
+				Protocol: testProtocol,
 			},
 		},
 	}
@@ -408,12 +408,12 @@ func TestValidateConfigEmptyMeterID(t *testing.T) {
 
 func TestValidateConfigEmptyMeterName(t *testing.T) {
 	config := &Config{
-		MQTT: MQTTConfig{Host: "localhost"},
+		MQTT: MQTTConfig{Host: testMQTTHost},
 		Meters: []MeterConfig{
 			{
 				ID:       "12345",
 				Name:     "",
-				Protocol: "scm+",
+				Protocol: testProtocol,
 			},
 		},
 	}
@@ -426,11 +426,11 @@ func TestValidateConfigEmptyMeterName(t *testing.T) {
 
 func TestValidateConfigEmptyMeterProtocol(t *testing.T) {
 	config := &Config{
-		MQTT: MQTTConfig{Host: "localhost"},
+		MQTT: MQTTConfig{Host: testMQTTHost},
 		Meters: []MeterConfig{
 			{
 				ID:       "12345",
-				Name:     "Test Meter",
+				Name:     testMeterName,
 				Protocol: "",
 			},
 		},

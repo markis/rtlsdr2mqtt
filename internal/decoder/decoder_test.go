@@ -9,6 +9,12 @@ import (
 	"rtlsdr2mqtt/internal/config"
 )
 
+const (
+	testProtocolSCMPlus = "scm+"
+	testProtocolIDM     = "idm"
+	testProtocolR900    = "r900"
+)
+
 func TestNewDecoder(t *testing.T) {
 	cfg := &config.Config{
 		SDR: config.SDRConfig{
@@ -17,7 +23,7 @@ func TestNewDecoder(t *testing.T) {
 		Meters: []config.MeterConfig{
 			{
 				ID:       "12345678",
-				Protocol: "scm+",
+				Protocol: testProtocolSCMPlus,
 			},
 		},
 	}
@@ -58,7 +64,7 @@ func TestNewDecoder(t *testing.T) {
 func TestNewDecoderNilLogger(t *testing.T) {
 	cfg := &config.Config{
 		Meters: []config.MeterConfig{
-			{ID: "12345", Protocol: "scm+"},
+			{ID: "12345", Protocol: testProtocolSCMPlus},
 		},
 	}
 
@@ -76,7 +82,7 @@ func TestNewDecoderNilLogger(t *testing.T) {
 func TestIsRunning(t *testing.T) {
 	cfg := &config.Config{
 		Meters: []config.MeterConfig{
-			{ID: "12345", Protocol: "scm+"},
+			{ID: "12345", Protocol: testProtocolSCMPlus},
 		},
 	}
 
@@ -96,32 +102,32 @@ func TestGetProtocols(t *testing.T) {
 		{
 			name: "single protocol",
 			meters: []config.MeterConfig{
-				{ID: "12345", Protocol: "scm+"},
+				{ID: "12345", Protocol: testProtocolSCMPlus},
 			},
-			expectedProtocols: []string{"scm+"},
+			expectedProtocols: []string{testProtocolSCMPlus},
 		},
 		{
 			name: "multiple different protocols",
 			meters: []config.MeterConfig{
-				{ID: "12345", Protocol: "scm+"},
-				{ID: "67890", Protocol: "idm"},
-				{ID: "11111", Protocol: "r900"},
+				{ID: "12345", Protocol: testProtocolSCMPlus},
+				{ID: "67890", Protocol: testProtocolIDM},
+				{ID: "11111", Protocol: testProtocolR900},
 			},
-			expectedProtocols: []string{"scm+", "idm", "r900"},
+			expectedProtocols: []string{testProtocolSCMPlus, testProtocolIDM, testProtocolR900},
 		},
 		{
 			name: "duplicate protocols",
 			meters: []config.MeterConfig{
-				{ID: "12345", Protocol: "scm+"},
-				{ID: "67890", Protocol: "scm+"},
-				{ID: "11111", Protocol: "idm"},
+				{ID: "12345", Protocol: testProtocolSCMPlus},
+				{ID: "67890", Protocol: testProtocolSCMPlus},
+				{ID: "11111", Protocol: testProtocolIDM},
 			},
-			expectedProtocols: []string{"scm+", "idm"},
+			expectedProtocols: []string{testProtocolSCMPlus, testProtocolIDM},
 		},
 		{
 			name:              "no meters - should return defaults",
 			meters:            []config.MeterConfig{},
-			expectedProtocols: []string{"scm", "scm+", "idm", "r900"},
+			expectedProtocols: []string{"scm", testProtocolSCMPlus, testProtocolIDM, testProtocolR900},
 		},
 		{
 			name: "mixed case protocols",
@@ -129,7 +135,7 @@ func TestGetProtocols(t *testing.T) {
 				{ID: "12345", Protocol: "SCM+"},
 				{ID: "67890", Protocol: "IdM"},
 			},
-			expectedProtocols: []string{"scm+", "idm"},
+			expectedProtocols: []string{testProtocolSCMPlus, testProtocolIDM},
 		},
 	}
 
@@ -164,16 +170,16 @@ func TestGetMeterIDs(t *testing.T) {
 		{
 			name: "single meter",
 			meters: []config.MeterConfig{
-				{ID: "12345", Protocol: "scm+"},
+				{ID: "12345", Protocol: testProtocolSCMPlus},
 			},
 			expectedIDs: []uint32{12345},
 		},
 		{
 			name: "multiple meters",
 			meters: []config.MeterConfig{
-				{ID: "12345", Protocol: "scm+"},
-				{ID: "67890", Protocol: "idm"},
-				{ID: "11111", Protocol: "r900"},
+				{ID: "12345", Protocol: testProtocolSCMPlus},
+				{ID: "67890", Protocol: testProtocolIDM},
+				{ID: "11111", Protocol: testProtocolR900},
 			},
 			expectedIDs: []uint32{12345, 67890, 11111},
 		},
@@ -185,9 +191,9 @@ func TestGetMeterIDs(t *testing.T) {
 		{
 			name: "invalid meter ID",
 			meters: []config.MeterConfig{
-				{ID: "12345", Protocol: "scm+"},
-				{ID: "invalid", Protocol: "idm"},
-				{ID: "67890", Protocol: "r900"},
+				{ID: "12345", Protocol: testProtocolSCMPlus},
+				{ID: "invalid", Protocol: testProtocolIDM},
+				{ID: "67890", Protocol: testProtocolR900},
 			},
 			expectedIDs: []uint32{12345, 67890},
 		},
@@ -221,7 +227,7 @@ func TestMessageHelperMethods(t *testing.T) {
 	msg := &Message{
 		MeterID:     87654321,
 		Consumption: 123456,
-		Protocol:    "scm+",
+		Protocol:    testProtocolSCMPlus,
 		Attributes:  map[string]any{"test": "value"},
 	}
 

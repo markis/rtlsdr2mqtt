@@ -7,6 +7,11 @@ import (
 	"testing"
 )
 
+const (
+	testTimestamp = "2024-01-01T12:00:00Z"
+	testTypeSCM   = "SCM"
+)
+
 func TestNewParser(t *testing.T) {
 	meterIDs := []string{"12345", "67890"}
 	parser := NewParser(meterIDs)
@@ -94,8 +99,8 @@ func TestParseLineSCMMessage(t *testing.T) {
 	}
 
 	rtlamrOutput := RTLAMROutput{
-		Time:    "2024-01-01T12:00:00Z",
-		Type:    "SCM",
+		Time:    testTimestamp,
+		Type:    testTypeSCM,
 		Message: msgBytes,
 	}
 	outputBytes, err := json.Marshal(rtlamrOutput)
@@ -134,7 +139,7 @@ func TestParseLineSCMPlusMessage(t *testing.T) {
 	}
 
 	rtlamrOutput := RTLAMROutput{
-		Time:    "2024-01-01T12:00:00Z",
+		Time:    testTimestamp,
 		Type:    "SCM+",
 		Message: msgBytes,
 	}
@@ -176,7 +181,7 @@ func TestParseLineR900Message(t *testing.T) {
 	}
 
 	rtlamrOutput := RTLAMROutput{
-		Time:    "2024-01-01T12:00:00Z",
+		Time:    testTimestamp,
 		Type:    "R900",
 		Message: msgBytes,
 	}
@@ -216,7 +221,7 @@ func TestParseLineIDMMessage(t *testing.T) {
 	}
 
 	rtlamrOutput := RTLAMROutput{
-		Time:    "2024-01-01T12:00:00Z",
+		Time:    testTimestamp,
 		Type:    "IDM",
 		Message: msgBytes,
 	}
@@ -256,8 +261,8 @@ func TestParseLineFilteredMeterID(t *testing.T) {
 	}
 
 	rtlamrOutput := RTLAMROutput{
-		Time:    "2024-01-01T12:00:00Z",
-		Type:    "SCM",
+		Time:    testTimestamp,
+		Type:    testTypeSCM,
 		Message: msgBytes,
 	}
 	outputBytes, err := json.Marshal(rtlamrOutput)
@@ -287,8 +292,8 @@ func TestGetMessageForIDs(t *testing.T) {
 	}
 
 	rtlamrOutput := RTLAMROutput{
-		Time:    "2024-01-01T12:00:00Z",
-		Type:    "SCM",
+		Time:    testTimestamp,
+		Type:    testTypeSCM,
 		Message: msgBytes,
 	}
 	outputBytes, err := json.Marshal(rtlamrOutput)
@@ -322,8 +327,8 @@ func TestGetMessageForIDsNoMatch(t *testing.T) {
 	}
 
 	rtlamrOutput := RTLAMROutput{
-		Time:    "2024-01-01T12:00:00Z",
-		Type:    "SCM",
+		Time:    testTimestamp,
+		Type:    testTypeSCM,
 		Message: msgBytes,
 	}
 	outputBytes, err := json.Marshal(rtlamrOutput)
@@ -462,7 +467,7 @@ func TestRTLAMROutputGetAttributes(t *testing.T) {
 	}
 
 	output := RTLAMROutput{
-		Type:    "SCM",
+		Type:    testTypeSCM,
 		Message: msgBytes,
 	}
 
@@ -482,7 +487,7 @@ func TestRTLAMROutputGetAttributes(t *testing.T) {
 
 func TestRTLAMROutputGetAttributesInvalidJSON(t *testing.T) {
 	output := RTLAMROutput{
-		Type:    "SCM",
+		Type:    testTypeSCM,
 		Message: json.RawMessage(`{invalid`),
 	}
 

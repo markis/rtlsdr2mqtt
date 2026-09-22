@@ -6,10 +6,23 @@ import (
 	"time"
 )
 
+const (
+	testLastSeen    = "2024-01-01T12:00:00Z"
+	testIdentifiers = "meter_12345"
+	testMeterName   = "Test Meter"
+	testSWVersion   = "1.0.0"
+	testHWVersion   = "1.0"
+	testOriginName  = "rtlsdr2mqtt"
+	testSupportURL  = "https://github.com/test/test"
+	testPlatform    = "sensor"
+	testDeviceClass = "energy"
+	testStateClass  = "total_increasing"
+)
+
 func TestStatePayloadJSON(t *testing.T) {
 	payload := StatePayload{
 		Reading:  123.45,
-		LastSeen: "2024-01-01T12:00:00Z",
+		LastSeen: testLastSeen,
 	}
 
 	data, err := json.Marshal(payload)
@@ -35,27 +48,27 @@ func TestStatePayloadJSON(t *testing.T) {
 func TestHADiscoveryPayloadJSON(t *testing.T) {
 	payload := HADiscoveryPayload{
 		Device: DeviceInfo{
-			Identifiers:  "meter_12345",
-			Name:         "Test Meter",
+			Identifiers:  testIdentifiers,
+			Name:         testMeterName,
 			Manufacturer: "Test Mfg",
 			Model:        "Model X",
-			SWVersion:    "1.0.0",
+			SWVersion:    testSWVersion,
 			SerialNumber: "12345",
-			HWVersion:    "1.0",
+			HWVersion:    testHWVersion,
 		},
 		Origin: OriginInfo{
-			Name:       "rtlsdr2mqtt",
-			SWVersion:  "1.0.0",
-			SupportURL: "https://github.com/test/test",
+			Name:       testOriginName,
+			SWVersion:  testSWVersion,
+			SupportURL: testSupportURL,
 		},
 		Components: map[string]Component{
 			"test_reading": {
-				Platform:      "sensor",
+				Platform:      testPlatform,
 				Name:          "Reading",
 				ValueTemplate: "{{ value_json.reading }}",
 				UniqueID:      "test_reading",
-				DeviceClass:   "energy",
-				StateClass:    "total_increasing",
+				DeviceClass:   testDeviceClass,
+				StateClass:    testStateClass,
 			},
 		},
 		StateTopic:        "rtlamr/12345/state",
@@ -92,19 +105,19 @@ func TestHADiscoveryPayloadJSON(t *testing.T) {
 
 func TestDeviceInfo(t *testing.T) {
 	device := DeviceInfo{
-		Identifiers:  "meter_12345",
-		Name:         "Test Meter",
+		Identifiers:  testIdentifiers,
+		Name:         testMeterName,
 		Manufacturer: "Test Manufacturer",
 		Model:        "Test Model",
-		SWVersion:    "1.0.0",
+		SWVersion:    testSWVersion,
 		SerialNumber: "SN12345",
-		HWVersion:    "1.0",
+		HWVersion:    testHWVersion,
 	}
 
-	if device.Identifiers != "meter_12345" {
+	if device.Identifiers != testIdentifiers {
 		t.Errorf("Expected identifiers 'meter_12345', got '%s'", device.Identifiers)
 	}
-	if device.Name != "Test Meter" {
+	if device.Name != testMeterName {
 		t.Errorf("Expected name 'Test Meter', got '%s'", device.Name)
 	}
 	if device.Manufacturer != "Test Manufacturer" {
@@ -113,51 +126,51 @@ func TestDeviceInfo(t *testing.T) {
 	if device.Model != "Test Model" {
 		t.Errorf("Expected model 'Test Model', got '%s'", device.Model)
 	}
-	if device.SWVersion != "1.0.0" {
+	if device.SWVersion != testSWVersion {
 		t.Errorf("Expected sw_version '1.0.0', got '%s'", device.SWVersion)
 	}
 	if device.SerialNumber != "SN12345" {
 		t.Errorf("Expected serial_number 'SN12345', got '%s'", device.SerialNumber)
 	}
-	if device.HWVersion != "1.0" {
+	if device.HWVersion != testHWVersion {
 		t.Errorf("Expected hw_version '1.0', got '%s'", device.HWVersion)
 	}
 }
 
 func TestOriginInfo(t *testing.T) {
 	origin := OriginInfo{
-		Name:       "rtlsdr2mqtt",
-		SWVersion:  "1.0.0",
-		SupportURL: "https://github.com/test/test",
+		Name:       testOriginName,
+		SWVersion:  testSWVersion,
+		SupportURL: testSupportURL,
 	}
 
-	if origin.Name != "rtlsdr2mqtt" {
+	if origin.Name != testOriginName {
 		t.Errorf("Expected name 'rtlsdr2mqtt', got '%s'", origin.Name)
 	}
-	if origin.SWVersion != "1.0.0" {
+	if origin.SWVersion != testSWVersion {
 		t.Errorf("Expected version '1.0.0', got '%s'", origin.SWVersion)
 	}
-	if origin.SupportURL != "https://github.com/test/test" {
+	if origin.SupportURL != testSupportURL {
 		t.Errorf("Expected support_url 'https://github.com/test/test', got '%s'", origin.SupportURL)
 	}
 }
 
 func TestComponent(t *testing.T) {
 	component := Component{
-		Platform:            "sensor",
+		Platform:            testPlatform,
 		Name:                "Test Sensor",
 		ValueTemplate:       "{{ value_json.value }}",
 		UniqueID:            "test_12345",
 		JSONAttributesTopic: "test/attributes",
-		DeviceClass:         "energy",
-		StateClass:          "total_increasing",
+		DeviceClass:         testDeviceClass,
+		StateClass:          testStateClass,
 		UnitOfMeasurement:   "kWh",
 		Icon:                "mdi:flash",
 		ExpireAfter:         3600,
 		ForceUpdate:         true,
 	}
 
-	if component.Platform != "sensor" {
+	if component.Platform != testPlatform {
 		t.Errorf("Expected platform 'sensor', got '%s'", component.Platform)
 	}
 	if component.Name != "Test Sensor" {
@@ -172,10 +185,10 @@ func TestComponent(t *testing.T) {
 	if component.JSONAttributesTopic != "test/attributes" {
 		t.Errorf("Expected json_attributes_topic 'test/attributes', got '%s'", component.JSONAttributesTopic)
 	}
-	if component.DeviceClass != "energy" {
+	if component.DeviceClass != testDeviceClass {
 		t.Errorf("Expected device class 'energy', got '%s'", component.DeviceClass)
 	}
-	if component.StateClass != "total_increasing" {
+	if component.StateClass != testStateClass {
 		t.Errorf("Expected state_class 'total_increasing', got '%s'", component.StateClass)
 	}
 	if component.UnitOfMeasurement != "kWh" {
@@ -288,7 +301,7 @@ func assertWillSettings(t *testing.T, cfg *ClientConfig) {
 func TestComponentJSONOmitEmpty(t *testing.T) {
 	// Test that omitempty works correctly
 	component := Component{
-		Platform:      "sensor",
+		Platform:      testPlatform,
 		Name:          "Test",
 		ValueTemplate: "{{ value }}",
 		UniqueID:      "test",
@@ -335,7 +348,7 @@ func TestComponentJSONOmitEmpty(t *testing.T) {
 func TestStatePayloadWithIntegerReading(t *testing.T) {
 	payload := StatePayload{
 		Reading:  12345,
-		LastSeen: "2024-01-01T12:00:00Z",
+		LastSeen: testLastSeen,
 	}
 
 	data, err := json.Marshal(payload)
@@ -357,7 +370,7 @@ func TestStatePayloadWithIntegerReading(t *testing.T) {
 func TestStatePayloadWithFloatReading(t *testing.T) {
 	payload := StatePayload{
 		Reading:  123.456,
-		LastSeen: "2024-01-01T12:00:00Z",
+		LastSeen: testLastSeen,
 	}
 
 	data, err := json.Marshal(payload)
@@ -378,7 +391,7 @@ func TestStatePayloadWithFloatReading(t *testing.T) {
 func TestStatePayloadWithStringReading(t *testing.T) {
 	payload := StatePayload{
 		Reading:  "unavailable",
-		LastSeen: "2024-01-01T12:00:00Z",
+		LastSeen: testLastSeen,
 	}
 
 	data, err := json.Marshal(payload)

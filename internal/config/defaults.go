@@ -2,10 +2,11 @@ package config
 
 import "github.com/creasty/defaults"
 
-const (
-	// DefaultGainMode is the default SDR gain mode.
-	DefaultGainMode = "auto"
-)
+// DefaultGainMode is the default SDR gain mode.
+const DefaultGainMode = "auto"
+
+// deviceClassEnergy is the energy device class value.
+const deviceClassEnergy = "energy"
 
 // DefaultConfig returns a configuration with default values.
 func DefaultConfig() *Config {
@@ -41,12 +42,12 @@ func ValidProtocols() []string {
 
 // ValidDeviceClasses returns the list of valid device classes.
 func ValidDeviceClasses() []string {
-	return []string{"none", "current", "energy", "gas", "power", "water"}
+	return []string{"none", "current", deviceClassEnergy, "gas", "power", "water"}
 }
 
 // ValidStateClasses returns the list of valid state classes.
 func ValidStateClasses() []string {
-	return []string{"measurement", "total", "total_increasing"}
+	return []string{"measurement", "total", defaultStateClass}
 }
 
 // ValidVerbosityLevels returns the list of valid verbosity levels.
@@ -63,8 +64,8 @@ func NewMeterConfig() *MeterConfig {
 		meter.Name = "Smart Meter"
 		meter.UnitOfMeasurement = "kWh"
 		meter.Icon = "mdi:flash"
-		meter.DeviceClass = "energy"
-		meter.StateClass = "total_increasing"
+		meter.DeviceClass = deviceClassEnergy
+		meter.StateClass = defaultStateClass
 		meter.ExpireAfter = 0
 		meter.ForceUpdate = false
 	}
