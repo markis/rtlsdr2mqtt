@@ -52,24 +52,19 @@ func TestErrorDefinitions(t *testing.T) {
 			want: "failed to set frequency correction",
 		},
 		{
-			name: "ErrReadFailed",
-			err:  ErrReadFailed,
-			want: "read failed",
-		},
-		{
-			name: "ErrAsyncFailed",
-			err:  ErrAsyncFailed,
-			want: "async operation failed",
-		},
-		{
 			name: "ErrResetBufferFailed",
 			err:  ErrResetBufferFailed,
 			want: "failed to reset buffer",
 		},
 		{
-			name: "ErrCancelAsyncFailed",
-			err:  ErrCancelAsyncFailed,
-			want: "failed to cancel async",
+			name: "ErrAlreadyStreaming",
+			err:  ErrAlreadyStreaming,
+			want: "device is already streaming",
+		},
+		{
+			name: "ErrStreamStopTimeout",
+			err:  ErrStreamStopTimeout,
+			want: "timed out stopping the sample stream",
 		},
 	}
 
@@ -88,7 +83,7 @@ func TestErrorDefinitions(t *testing.T) {
 
 func TestErrorWrapping(t *testing.T) {
 	// Test that errors can be wrapped and unwrapped
-	additionalErr := ErrReadFailed
+	additionalErr := ErrStreamStopTimeout
 	wrappedErr := errors.Join(ErrDeviceNotOpen, additionalErr)
 
 	if !errors.Is(wrappedErr, ErrDeviceNotOpen) {

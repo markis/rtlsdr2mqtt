@@ -79,6 +79,11 @@ type ClientConfig struct {
 	KeepAlive      time.Duration
 	ConnectTimeout time.Duration
 
+	// RequestTimeout bounds how long Publish, Subscribe, and Unsubscribe wait
+	// for broker operations. Without it, QoS 1 publishes pending during a
+	// broker outage can block callers indefinitely.
+	RequestTimeout time.Duration
+
 	// Last Will and Testament
 	WillTopic   string
 	WillPayload string

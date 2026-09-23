@@ -30,15 +30,21 @@ const (
 	// DefaultSymbolLength is the default symbol length for decoding.
 	DefaultSymbolLength = 72
 
-	// DefaultReadTimeout is the default timeout for reading samples.
-	DefaultReadTimeout = 5 * time.Second
+	// DefaultWatchdogTimeout is how long the decode loop may go without
+	// receiving a sample block from the SDR before the decoder is restarted.
+	// Sample blocks arrive every few milliseconds, so a silent device (USB
+	// wedge, dead RF pipe) is flagged long before the health check file stales.
+	DefaultWatchdogTimeout = 30 * time.Second
 )
 
 var (
-	ErrDecoderNotStarted = errors.New("decoder is not started")
-	ErrDecoderStopped    = errors.New("decoder has been stopped")
-	ErrDecoderTimeout    = errors.New("decoder timeout while reading messages")
-	ErrShortRead         = errors.New("short read from SDR device")
+	ErrDecoderNotStarted  = errors.New("decoder is not started")
+	ErrDecoderStopped     = errors.New("decoder has been stopped")
+	ErrDecoderTimeout     = errors.New("decoder timeout while reading messages")
+	ErrShortRead          = errors.New("short read from SDR device")
+	ErrSampleFlowStalled  = errors.New("sample flow from SDR stalled")
+	ErrSampleStreamClosed = errors.New("sample stream from SDR closed unexpectedly")
+	ErrInvalidBlockSize   = errors.New("invalid block size from decoder configuration")
 )
 
 // Decoder wraps the rtlamr decoder for direct integration.
@@ -49,14 +55,16 @@ type Decoder struct {
 	config  *config.Config
 	logger  *slog.Logger
 
-	cancelFunc context.CancelFunc
-	doneChan   chan struct{}
-	wg         sync.WaitGroup
+	watchdogTimeout time.Duration
+	cancelFunc      context.CancelFunc
+	doneChan        chan struct{}
+	wg              sync.WaitGroup
 
-	msgChan   chan *Message
-	errChan   chan error
-	isRunning atomic.Bool
-	mu        sync.Mutex // Only used for Start/Stop synchronization
+	msgChan      chan *Message
+	errChan      chan error
+	sampleSignal chan struct{}
+	isRunning    atomic.Bool
+	mu           sync.Mutex // Only used for Start/Stop synchronization
 }
 
 // Message represents a decoded meter message.
@@ -77,11 +85,13 @@ func NewDecoder(cfg *config.Config, logger *slog.Logger) *Decoder {
 	}
 
 	return &Decoder{
-		config:   cfg,
-		logger:   logger,
-		msgChan:  make(chan *Message, 100),
-		errChan:  make(chan error, 10),
-		doneChan: make(chan struct{}),
+		config:          cfg,
+		logger:          logger,
+		watchdogTimeout: DefaultWatchdogTimeout,
+		msgChan:         make(chan *Message, 100),
+		errChan:         make(chan error, 10),
+		sampleSignal:    make(chan struct{}, 1),
+		doneChan:        make(chan struct{}),
 	}
 }
 
@@ -122,9 +132,16 @@ func (d *Decoder) Start(ctx context.Context) error {
 	}
 
 	// Create and open SDR device
-	device, err := sdr.NewSDR(d.config, d.logger)
-	if err != nil {
-		return fmt.Errorf("failed to create SDR: %w", err)
+	var device sdr.SDR
+	if d.sdr != nil {
+		// Pre-injected device (tests)
+		device = d.sdr
+	} else {
+		var err error
+		device, err = sdr.NewSDR(d.config, d.logger)
+		if err != nil {
+			return fmt.Errorf("failed to create SDR: %w", err)
+		}
 	}
 	d.sdr = device
 
@@ -153,6 +170,20 @@ func (d *Decoder) Start(ctx context.Context) error {
 		return fmt.Errorf("failed to reset buffer: %w", err)
 	}
 
+	// Each Decode call consumes exactly BlockSize2 bytes, so the sample
+	// stream must deliver blocks of that size: bufLen is in samples, two
+	// bytes (I+Q) each.
+	if cfg.BlockSize2 <= 0 {
+		return fmt.Errorf("%w: %d", ErrInvalidBlockSize, cfg.BlockSize2)
+	}
+	bufLen := uint32(cfg.BlockSize2 / 2) //nolint:gosec // BlockSize2 is a positive power-of-two byte count
+
+	// Begin async sample delivery; blocks are dropped if the decode loop stalls.
+	streamChan, err := d.sdr.StartStreaming(bufLen, 0)
+	if err != nil {
+		return fmt.Errorf("failed to start sample streaming: %w", err)
+	}
+
 	d.logger.Info("Decoder connected to RTL-SDR",
 		"center_freq", cfg.CenterFreq,
 		"sample_rate", cfg.SampleRate,
@@ -160,9 +191,10 @@ func (d *Decoder) Start(ctx context.Context) error {
 
 	d.isRunning.Store(true)
 
-	// Start the decode loop
-	d.wg.Add(1)
-	go d.decodeLoop(ctx)
+	// Start the decode loop and watchdog
+	d.wg.Add(2)
+	go d.decodeLoop(ctx, streamChan)
+	go d.watchdogLoop(ctx)
 
 	return nil
 }
@@ -187,14 +219,20 @@ func (d *Decoder) Stop() error {
 	// Wait for goroutines to finish
 	d.wg.Wait()
 
-	// Close SDR connection
-	d.sdr.Close()
+	// Stop the async sample reader and close the device
+	if err := d.sdr.StopStreaming(); err != nil {
+		d.logger.Error("Failed to stop sample streaming", "error", err)
+	}
+	if err := d.sdr.Close(); err != nil {
+		d.logger.Error("Failed to close SDR device", "error", err)
+	}
 
 	d.isRunning.Store(false)
 
 	// Recreate channels for potential restart
 	d.msgChan = make(chan *Message, 100)
 	d.errChan = make(chan error, 10)
+	d.sampleSignal = make(chan struct{}, 1)
 	d.doneChan = make(chan struct{})
 
 	d.logger.Info("Decoder stopped")
@@ -237,14 +275,8 @@ func (d *Decoder) ReadMessage(timeout time.Duration) (*Message, error) {
 }
 
 // decodeLoop is the main decode loop that reads samples and decodes messages.
-func (d *Decoder) decodeLoop(ctx context.Context) {
+func (d *Decoder) decodeLoop(ctx context.Context, streamChan <-chan []byte) {
 	defer d.wg.Done()
-
-	cfg := d.decoder.Cfg
-
-	// Create sample blocks for double-buffering
-	blockA := make([]byte, cfg.BlockSize2)
-	blockB := make([]byte, cfg.BlockSize2)
 
 	// Track messages across blocks to deduplicate
 	prev := make(map[protocol.Digest]bool)
@@ -254,62 +286,87 @@ func (d *Decoder) decodeLoop(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		default:
-		}
-
-		// Set read deadline (for compatibility)
-		if err := d.sdr.SetDeadline(time.Now().Add(DefaultReadTimeout)); err != nil {
-			d.sendError(fmt.Errorf("failed to set deadline: %w", err))
-			return
-		}
-
-		// Read sample block directly from RTL-SDR
-		nRead, err := d.sdr.ReadSync(blockA)
-		if err != nil {
-			d.sendError(fmt.Errorf("failed to read samples: %w", err))
-			return
-		}
-		if nRead != len(blockA) {
-			d.sendError(fmt.Errorf("%w: got %d, expected %d", ErrShortRead, nRead, len(blockA)))
-			return
-		}
-
-		// Clear next map
-		for key := range next {
-			delete(next, key)
-		}
-
-		// Decode messages from the block
-		for msg := range d.decoder.Decode(blockA) {
-			// Apply filters
-			if !d.fc.match(msg) {
-				continue
+		case block, ok := <-streamChan:
+			if !ok {
+				// Stream closed unexpectedly (device death); restart via error path.
+				d.logger.Error("Sample stream closed unexpectedly")
+				d.sendError(ErrSampleStreamClosed)
+				return
 			}
 
-			// Deduplicate messages spanning blocks
-			digest := protocol.NewDigest(msg)
-			next[digest] = true
-			if prev[digest] {
-				continue
-			}
-
-			// Convert to our message type
-			decoded := d.convertMessage(msg)
-
-			// Send message (non-blocking)
+			// Notify the watchdog that samples are flowing.
 			select {
-			case d.msgChan <- decoded:
+			case d.sampleSignal <- struct{}{}:
 			default:
-				d.logger.Warn("Message channel full, dropping message",
-					"meter_id", decoded.MeterID)
+			}
+
+			// Swap digest maps
+			prev, next = next, prev
+
+			// Clear next map
+			for key := range next {
+				delete(next, key)
+			}
+
+			// Decode messages from the block
+			for msg := range d.decoder.Decode(block) {
+				// Apply filters
+				if !d.fc.match(msg) {
+					continue
+				}
+
+				// Deduplicate messages spanning blocks
+				digest := protocol.NewDigest(msg)
+				next[digest] = true
+				if prev[digest] {
+					continue
+				}
+
+				// Convert to our message type
+				decoded := d.convertMessage(msg)
+
+				// Send message (non-blocking)
+				select {
+				case d.msgChan <- decoded:
+				default:
+					d.logger.Warn("Message channel full, dropping message",
+						"meter_id", decoded.MeterID)
+				}
 			}
 		}
+	}
+}
 
-		// Swap digest maps
-		prev, next = next, prev
+// watchdogLoop reports ErrSampleFlowStalled when the SDR stops delivering
+// sample blocks. Healthy devices deliver a block every few milliseconds, so
+// silence indicates a wedged USB pipe or dead reader. The error flows through
+// errChan into the controller's existing decoder-restart path.
+func (d *Decoder) watchdogLoop(ctx context.Context) {
+	defer d.wg.Done()
 
-		// Swap blocks
-		blockA, blockB = blockB, blockA
+	timer := time.NewTimer(d.watchdogTimeout)
+	defer timer.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-d.sampleSignal:
+			// Sample block observed; restart the stall timer. The non-blocking
+			// drain handles a value that fired concurrently with this branch.
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+			timer.Reset(d.watchdogTimeout)
+		case <-timer.C:
+			d.logger.Error("Sample flow stalled, initiating decoder restart",
+				"timeout", d.watchdogTimeout)
+			d.sendError(ErrSampleFlowStalled)
+			return
+		}
 	}
 }
 

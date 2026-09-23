@@ -114,6 +114,15 @@ meters:
 | `expire_after` | Seconds until unavailable | 0 (disabled) |
 | `force_update` | Always publish updates | `false` |
 
+## Reliability Behavior
+
+The application self-recovers from upstream outages instead of waiting for the container health check to restart it:
+
+- **MQTT publishes are bounded.** Publishes, subscribes, and unsubscribes time out after 10 seconds. During a broker outage, readings still log and the health check heartbeat (touched on every decoded reading) stays fresh; failed publishes are logged as errors and retried on the next reading.
+- **Sample-flow watchdog.** If the RTL-SDR stops delivering samples for 30 seconds (wedged USB pipe, dead dongle), the decoder is stopped and restarted automatically, with an error-level log naming the cause.
+- **Unexpected stream closure.** If the device stops on its own, the decoder restarts automatically.
+- **Health check file.** `HEALTHCHECK_FILE` is touched on each decoded reading. The stock `scripts/healthcheck.sh` fails when the file is older than 5 minutes. This is the last-resort backstop: it only trips if self-recovery has already failed.
+
 ## Development
 
 ```bash

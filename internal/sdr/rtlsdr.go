@@ -35,19 +35,24 @@ var (
 
 // RTLSDRDevice implements the SDR interface using direct librtlsdr C bindings.
 type RTLSDRDevice struct {
-	dev          *C.rtlsdr_dev_t
-	callback     SampleCallback
-	callbackID   uintptr
-	mu           sync.Mutex
-	isOpen       bool
-	deviceIndex  uint32
-	readDeadline time.Time
+	dev         *C.rtlsdr_dev_t
+	deviceIndex uint32
+	mu          sync.Mutex
+	isOpen      bool
+
+	// Streaming state, guarded by mu.
+	streaming     bool
+	streamChan    chan []byte
+	callbackID    uintptr
+	asyncDone     chan struct{} // closed when rtlsdr_read_async returns
+	cancelTimeout time.Duration
 }
 
 // NewRTLSDRDevice creates a new RTL-SDR device instance with the specified device index.
 func NewRTLSDRDevice(deviceIndex uint32) *RTLSDRDevice {
 	return &RTLSDRDevice{
-		deviceIndex: deviceIndex,
+		deviceIndex:   deviceIndex,
+		cancelTimeout: 5 * time.Second,
 	}
 }
 
@@ -92,12 +97,12 @@ func (d *RTLSDRDevice) Close() error {
 		return nil
 	}
 
-	// Clean up callback registration if any
-	if d.callbackID != 0 {
-		callbackMu.Lock()
-		delete(callbackRefs, d.callbackID)
-		callbackMu.Unlock()
-		d.callbackID = 0
+	// If the async reader refuses to stop, the device handle must be leaked:
+	// freeing it while the C read loop still runs is a use-after-free.
+	if d.streaming {
+		if err := d.stopStreamLocked(); err != nil {
+			return fmt.Errorf("cannot close device while streaming: %w", err)
+		}
 	}
 
 	C.rtlsdr_close(d.dev)
@@ -138,7 +143,7 @@ func (d *RTLSDRDevice) SetSampleRate(rate uint32) error {
 	return nil
 }
 
-// SetGainMode sets the gain mode (manual or auto).
+// SetGainMode sets the gainmode (manual or auto).
 // If manual is true, manual gain mode is enabled. Otherwise, auto gain is used.
 func (d *RTLSDRDevice) SetGainMode(manual bool) error {
 	d.mu.Lock()
@@ -229,86 +234,107 @@ func (d *RTLSDRDevice) ResetBuffer() error {
 	return nil
 }
 
-// ReadSync performs a synchronous read of IQ samples into the provided buffer.
-// Returns the number of bytes actually read.
-func (d *RTLSDRDevice) ReadSync(buf []byte) (int, error) {
+// StartStreaming begins async sample delivery to the returned channel.
+// bufNum is the number of librtlsdr transfer buffers (0 uses the default: 15).
+// bufLen is the size of each buffer in samples (0 uses the default: 16384).
+// Sample blocks are dropped when the consumer cannot keep up.
+func (d *RTLSDRDevice) StartStreaming(bufLen, bufNum uint32) (<-chan []byte, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	if !d.isOpen {
-		return 0, ErrDeviceNotOpen
+		return nil, ErrDeviceNotOpen
+	}
+	if d.streaming {
+		return nil, ErrAlreadyStreaming
 	}
 
-	if len(buf) == 0 {
-		return 0, nil
+	callback := func(samples []byte) {
+		// Non-blocking delivery: the decoder tolerates dropped blocks far better
+		// than an unbounded backlog or a blocked C read loop.
+		select {
+		case d.streamChan <- samples:
+		default:
+		}
 	}
 
-	var nRead C.int
-	ret := C.rtlsdr_read_sync(
-		d.dev,
-		unsafe.Pointer(&buf[0]),
-		C.int(len(buf)),
-		&nRead,
-	)
-
-	if ret != 0 {
-		return 0, fmt.Errorf("%w: error code %d", ErrReadFailed, ret)
-	}
-
-	return int(nRead), nil
-}
-
-// StartAsync starts asynchronous sample reading with a callback.
-// bufNum is the number of buffers to allocate (use 0 for default: 15).
-// bufLen is the size of each buffer (use 0 for default: 16384).
-func (d *RTLSDRDevice) StartAsync(callback SampleCallback, bufNum, bufLen uint32) error {
-	d.mu.Lock()
-
-	if !d.isOpen {
-		d.mu.Unlock()
-		return ErrDeviceNotOpen
-	}
-
-	// Register callback
 	callbackMu.Lock()
 	d.callbackID = nextCallbackID
 	nextCallbackID++
 	callbackRefs[d.callbackID] = callback
 	callbackMu.Unlock()
 
-	d.callback = callback
-	d.mu.Unlock()
+	// Small buffer: a few blocks of slack for the consumer, then drop. The
+	// decoder tolerates dropped blocks far better than a blocked C read loop.
+	d.streamChan = make(chan []byte, 4)
+	d.asyncDone = make(chan struct{})
+	d.streaming = true
 
-	// Note: This call blocks until CancelAsync is called
-	ret := C.call_rtlsdr_read_async(
-		d.dev,
-		unsafe.Pointer(d.callbackID), //nolint:govet // Converting uintptr to unsafe.Pointer for CGO callback context
-		C.uint32_t(bufNum),
-		C.uint32_t(bufLen),
-	)
+	go func() {
+		defer close(d.asyncDone)
+		// Note: This call blocks until rtlsdr_cancel_async is accepted.
+		ret := C.call_rtlsdr_read_async(
+			d.dev,
+			unsafe.Pointer(d.callbackID), //nolint:govet // Converting uintptr to unsafe.Pointer for CGO callback context
+			C.uint32_t(bufNum),
+			C.uint32_t(bufLen),
+		)
+		if ret != 0 {
+			return
+		}
+	}()
 
-	if ret != 0 {
-		return fmt.Errorf("%w: error code %d", ErrAsyncFailed, ret)
-	}
-
-	return nil
+	return d.streamChan, nil
 }
 
-// CancelAsync cancels the asynchronous reading operation.
-func (d *RTLSDRDevice) CancelAsync() error {
+// StopStreaming cancels the async sample reader and waits for it to exit.
+// librtlsdr silently drops rtlsdr_cancel_async calls issued before the read
+// loop reaches the RUNNING state, so cancellation is retried until the reader
+// exits or the timeout elapses.
+func (d *RTLSDRDevice) StopStreaming() error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	if !d.isOpen {
-		return ErrDeviceNotOpen
+	if !d.streaming {
+		return nil
 	}
 
-	ret := C.rtlsdr_cancel_async(d.dev)
-	if ret != 0 {
-		return fmt.Errorf("%w: error code %d", ErrCancelAsyncFailed, ret)
+	err := d.stopStreamLocked()
+	if err == nil {
+		close(d.streamChan)
 	}
+	return err
+}
 
-	return nil
+// stopStreamLocked cancels and joins the async reader. The caller must hold d.mu.
+// On timeout the streaming flag stays set so Close refuses to free a device
+// the C read loop still uses. It must not close streamChan in that case:
+// stale references from the live callback would panic on send.
+func (d *RTLSDRDevice) stopStreamLocked() error {
+	callbackMu.Lock()
+	delete(callbackRefs, d.callbackID)
+	callbackMu.Unlock()
+	d.callbackID = 0
+
+	timeout := time.After(d.cancelTimeout)
+	ticker := time.NewTicker(50 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-d.asyncDone:
+			d.streaming = false
+			return nil
+		case <-ticker.C:
+			// Retry until the C read loop accepts the cancellation.
+			ret := C.rtlsdr_cancel_async(d.dev)
+			if ret != 0 {
+				return fmt.Errorf("failed to cancel async read: error code %d", ret)
+			}
+		case <-timeout:
+			return ErrStreamStopTimeout
+		}
+	}
 }
 
 // GetTunerGains returns the list of available tuner gains in tenths of dB.
@@ -337,17 +363,6 @@ func (d *RTLSDRDevice) GetTunerGains() []int {
 	}
 
 	return result
-}
-
-// SetDeadline sets a read deadline for compatibility with io.Reader expectations.
-// Note: librtlsdr doesn't support native deadlines, so this is a no-op for now.
-// The decoder loop handles timeouts at a higher level.
-func (d *RTLSDRDevice) SetDeadline(t time.Time) error {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
-	d.readDeadline = t
-	return nil
 }
 
 // goSampleCallback is called by C code for async sample delivery.

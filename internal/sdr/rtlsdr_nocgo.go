@@ -3,10 +3,7 @@
 // Package sdr provides a stub implementation when CGO is not available.
 package sdr
 
-import (
-	"errors"
-	"time"
-)
+import "errors"
 
 // ErrNoCGO is returned when trying to use direct RTL-SDR access without CGO.
 var ErrNoCGO = errors.New("direct RTL-SDR access requires CGO (build with CGO_ENABLED=1)")
@@ -78,27 +75,17 @@ func (d *RTLSDRDevice) ResetBuffer() error {
 	return ErrNoCGO
 }
 
-// ReadSync returns ErrNoCGO.
-func (d *RTLSDRDevice) ReadSync(_ []byte) (int, error) {
-	return 0, ErrNoCGO
+// StartStreaming returns ErrNoCGO.
+func (d *RTLSDRDevice) StartStreaming(_, _ uint32) (<-chan []byte, error) {
+	return nil, ErrNoCGO
 }
 
-// StartAsync returns ErrNoCGO.
-func (d *RTLSDRDevice) StartAsync(_ SampleCallback, _, _ uint32) error {
-	return ErrNoCGO
-}
-
-// CancelAsync returns ErrNoCGO.
-func (d *RTLSDRDevice) CancelAsync() error {
+// StopStreaming returns ErrNoCGO.
+func (d *RTLSDRDevice) StopStreaming() error {
 	return ErrNoCGO
 }
 
 // GetTunerGains returns nil without CGO.
 func (d *RTLSDRDevice) GetTunerGains() []int {
-	return nil
-}
-
-// SetDeadline is a no-op without CGO.
-func (d *RTLSDRDevice) SetDeadline(_ time.Time) error {
 	return nil
 }

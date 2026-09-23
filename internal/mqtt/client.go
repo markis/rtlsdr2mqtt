@@ -17,6 +17,9 @@ import (
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 )
 
+// DefaultRequestTimeout is the default bound on Publish, Subscribe, and Unsubscribe waits.
+const DefaultRequestTimeout = 10 * time.Second
+
 var ErrParseCACertificate = errors.New("failed to parse CA certificate")
 
 // PahoClient wraps the Paho MQTT client.
@@ -61,6 +64,9 @@ func NewClient(config *ClientConfig, logger *slog.Logger) (Client, error) {
 	if config.ConnectTimeout == 0 {
 		config.ConnectTimeout = 10 * time.Second
 	}
+	if config.RequestTimeout == 0 {
+		config.RequestTimeout = DefaultRequestTimeout
+	}
 
 	// Create MQTT client options
 	opts := mqtt.NewClientOptions()
@@ -102,7 +108,7 @@ func (c *PahoClient) Connect() error {
 	c.logger.Info("Connecting to MQTT broker", "host", c.config.Host, "port", c.config.Port)
 
 	token := c.client.Connect()
-	if token.Wait() && token.Error() != nil {
+	if token.WaitTimeout(c.config.ConnectTimeout) && token.Error() != nil {
 		return fmt.Errorf("failed to connect to MQTT broker: %w", token.Error())
 	}
 
@@ -142,7 +148,13 @@ func (c *PahoClient) Publish(topic string, payload any, qos byte, retain bool) e
 	c.logger.Debug("Publishing MQTT message", "topic", topic, "qos", qos, "retain", retain)
 
 	token := c.client.Publish(topic, qos, retain, payloadBytes)
-	if token.Wait() && token.Error() != nil {
+	if !token.WaitTimeout(c.config.RequestTimeout) {
+		// Timed out: the message is abandoned, not confirmed delivered. The
+		// next reading republishes fresh data, so this is logged, not fatal.
+		c.logger.Warn("MQTT publish timed out", "topic", topic, "timeout", c.config.RequestTimeout)
+		return nil
+	}
+	if token.Error() != nil {
 		return fmt.Errorf("failed to publish to topic %s: %w", topic, token.Error())
 	}
 
@@ -167,7 +179,7 @@ func (c *PahoClient) Subscribe(topic string, qos byte, handler MessageHandler) e
 		}
 	})
 
-	if token.Wait() && token.Error() != nil {
+	if token.WaitTimeout(c.config.RequestTimeout) && token.Error() != nil {
 		return fmt.Errorf("failed to subscribe to topic %s: %w", topic, token.Error())
 	}
 
@@ -183,7 +195,7 @@ func (c *PahoClient) Unsubscribe(topic string) error {
 	c.logger.Debug("Unsubscribing from MQTT topic", "topic", topic)
 
 	token := c.client.Unsubscribe(topic)
-	if token.Wait() && token.Error() != nil {
+	if token.WaitTimeout(c.config.RequestTimeout) && token.Error() != nil {
 		return fmt.Errorf("failed to unsubscribe from topic %s: %w", topic, token.Error())
 	}
 

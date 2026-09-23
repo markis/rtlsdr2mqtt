@@ -5,7 +5,6 @@ package sdr
 import (
 	"errors"
 	"testing"
-	"time"
 )
 
 func TestRTLSDRDevice_NoCGO_Basic(t *testing.T) {
@@ -77,32 +76,20 @@ func TestRTLSDRDevice_NoCGO_IO(t *testing.T) {
 		t.Errorf("ResetBuffer() error = %v, want %v", err, ErrNoCGO)
 	}
 
-	// Test ReadSync
-	buf := make([]byte, 1024)
-	if n, err := device.ReadSync(buf); !errors.Is(err, ErrNoCGO) {
-		t.Errorf("ReadSync() error = %v, want %v", err, ErrNoCGO)
-	} else if n != 0 {
-		t.Errorf("ReadSync() n = %v, want 0", n)
+	// Test StartStreaming
+	if ch, err := device.StartStreaming(0, 0); !errors.Is(err, ErrNoCGO) {
+		t.Errorf("StartStreaming() error = %v, want %v", err, ErrNoCGO)
+	} else if ch != nil {
+		t.Errorf("StartStreaming() channel = %v, want nil", ch)
 	}
 
-	// Test StartAsync
-	callback := func(_ []byte) {}
-	if err := device.StartAsync(callback, 0, 0); !errors.Is(err, ErrNoCGO) {
-		t.Errorf("StartAsync() error = %v, want %v", err, ErrNoCGO)
-	}
-
-	// Test CancelAsync
-	if err := device.CancelAsync(); !errors.Is(err, ErrNoCGO) {
-		t.Errorf("CancelAsync() error = %v, want %v", err, ErrNoCGO)
+	// Test StopStreaming
+	if err := device.StopStreaming(); !errors.Is(err, ErrNoCGO) {
+		t.Errorf("StopStreaming() error = %v, want %v", err, ErrNoCGO)
 	}
 
 	// Test GetTunerGains
 	if gains := device.GetTunerGains(); gains != nil {
 		t.Errorf("GetTunerGains() = %v, want nil", gains)
-	}
-
-	// Test SetDeadline
-	if err := device.SetDeadline(time.Now()); err != nil {
-		t.Errorf("SetDeadline() error = %v, want nil", err)
 	}
 }
