@@ -22,6 +22,8 @@ var (
 	ErrSetFreqCorrectionFailed = errors.New("failed to set frequency correction")
 	// ErrResetBufferFailed is returned when resetting the buffer fails.
 	ErrResetBufferFailed = errors.New("failed to reset buffer")
+	// ErrCancelAsyncFailed is returned when the async reader rejects cancellation.
+	ErrCancelAsyncFailed = errors.New("failed to cancel async read")
 	// ErrAlreadyStreaming is returned when starting a stream while one is active.
 	ErrAlreadyStreaming = errors.New("device is already streaming")
 	// ErrStreamStopTimeout is returned when the async sample reader does not

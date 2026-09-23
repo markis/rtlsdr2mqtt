@@ -100,7 +100,8 @@ func (d *RTLSDRDevice) Close() error {
 	// If the async reader refuses to stop, the device handle must be leaked:
 	// freeing it while the C read loop still runs is a use-after-free.
 	if d.streaming {
-		if err := d.stopStreamLocked(); err != nil {
+		err := d.stopStreamLocked()
+		if err != nil {
 			return fmt.Errorf("cannot close device while streaming: %w", err)
 		}
 	}
@@ -329,7 +330,7 @@ func (d *RTLSDRDevice) stopStreamLocked() error {
 			// Retry until the C read loop accepts the cancellation.
 			ret := C.rtlsdr_cancel_async(d.dev)
 			if ret != 0 {
-				return fmt.Errorf("failed to cancel async read: error code %d", ret)
+				return fmt.Errorf("%w: error code %d", ErrCancelAsyncFailed, ret)
 			}
 		case <-timeout:
 			return ErrStreamStopTimeout

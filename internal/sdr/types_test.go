@@ -57,6 +57,11 @@ func TestErrorDefinitions(t *testing.T) {
 			want: "failed to reset buffer",
 		},
 		{
+			name: "ErrCancelAsyncFailed",
+			err:  ErrCancelAsyncFailed,
+			want: "failed to cancel async read",
+		},
+		{
 			name: "ErrAlreadyStreaming",
 			err:  ErrAlreadyStreaming,
 			want: "device is already streaming",
