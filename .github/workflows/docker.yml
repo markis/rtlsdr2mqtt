@@ -106,7 +106,7 @@ jobs:
       - name: Set build output
         if: github.event_name != 'pull_request'
         run: |
-          echo "BUILDX_OUTPUT=type=image,name=${REGISTRY_IMAGE},push-by-digest=true,name-canonical=true" >> "$GITHUB_ENV"
+          echo "BUILDX_OUTPUT=type=image,name=${REGISTRY_IMAGE},push-by-digest=true,name-canonical=true,push=true" >> "$GITHUB_ENV"
 
       - name: Build and push by digest
         id: build
