@@ -18,16 +18,20 @@ permissions:
   packages: write
 
 env:
-  PLATFORMS: linux/arm64,linux/amd64,linux/arm/v7
+  REGISTRY_IMAGE: ghcr.io/${{ github.repository }}
 
 jobs:
-  docker:
+  prepare:
     runs-on: ubuntu-latest
     # Only run if triggered by tag push, PR, or successful auto tag workflow
     if: >
       github.event_name == 'push' ||
       github.event_name == 'pull_request' ||
       (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+    outputs:
+      version: ${{ steps.get_tag.outputs.tag }}
+      tags: ${{ steps.meta.outputs.tags }}
+      labels: ${{ steps.meta.outputs.labels }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -45,21 +49,8 @@ jobs:
           else
             VERSION=$(git describe --tags --always --dirty)
           fi
-          echo "tag=${VERSION}" >> $GITHUB_OUTPUT
+          echo "tag=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "Version: ${VERSION}"
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Extract metadata (tags, labels) for Docker
         id: meta
@@ -81,16 +72,114 @@ jobs:
           images: |
             ghcr.io/${{ github.repository }}
 
-      - name: Build and push
+  build:
+    runs-on: ${{ matrix.runner }}
+    needs: prepare
+    strategy:
+      matrix:
+        # One platform per native runner; no QEMU emulation
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare platform pair
+        run: |
+          PLATFORM_PAIR=$(echo "${{ matrix.platform }}" | tr '/' '-')
+          echo "PLATFORM_PAIR=$PLATFORM_PAIR" >> "$GITHUB_ENV"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set build output
+        if: github.event_name != 'pull_request'
+        run: |
+          echo "BUILDX_OUTPUT=type=image,name=${REGISTRY_IMAGE},push-by-digest=true,name-canonical=true" >> "$GITHUB_ENV"
+
+      - name: Build and push by digest
+        id: build
         uses: docker/build-push-action@v5
         with:
           context: .
-          platforms: ${{ env.PLATFORMS }}
+          platforms: ${{ matrix.platform }}
           file: Containerfile
           build-args: |
-            VERSION=${{ steps.get_tag.outputs.tag }}
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+            VERSION=${{ needs.prepare.outputs.version }}
+          labels: ${{ needs.prepare.outputs.labels }}
+          outputs: ${{ env.BUILDX_OUTPUT }}
+          cache-from: type=gha,scope=buildkit-${{ env.PLATFORM_PAIR }}
+          # Fork PRs have a read-only GITHUB_TOKEN; ignore cache export failures there
+          cache-to: type=gha,scope=buildkit-${{ env.PLATFORM_PAIR }},mode=max,ignore-error=true
+
+      - name: Export digest
+        if: github.event_name != 'pull_request'
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - name: Upload digest
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ env.PLATFORM_PAIR }}
+          path: /tmp/digests/
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    runs-on: ubuntu-latest
+    needs: [prepare, build]
+    if: github.event_name != 'pull_request'
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digests-*
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create manifest list and push
+        working-directory: /tmp/digests
+        env:
+          TAGS: ${{ needs.prepare.outputs.tags }}
+        run: |
+          args=()
+          while IFS= read -r tag; do
+            if [ -n "$tag" ]; then
+              args+=(--tag "$tag")
+            fi
+          done <<< "$TAGS"
+          for digest in *; do
+            args+=("${REGISTRY_IMAGE}@sha256:${digest}")
+          done
+          docker buildx imagetools create "${args[@]}"
+
+      - name: Inspect image
+        env:
+          TAGS: ${{ needs.prepare.outputs.tags }}
+        run: |
+          first_tag=$(head -n1 <<< "$TAGS")
+          docker buildx imagetools inspect "$first_tag"

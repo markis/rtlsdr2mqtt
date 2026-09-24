@@ -6,7 +6,6 @@ url: "https://github.com/markis/rtlsdr2mqtt"
 arch:
   - amd64
   - aarch64
-  - armv7
 startup: application
 boot: auto
 usb: true

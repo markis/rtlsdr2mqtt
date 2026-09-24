@@ -21,15 +21,8 @@ RUN --mount=type=cache,target=/var/cache/apk,sharing=locked \
 ENV CGO_ENABLED=1
 ENV GOOS=linux
 RUN case "${TARGETARCH}" in \
-  "arm") \
-  echo "export GOARCH=arm" >> /tmp/buildenv && \
-  echo "export GOARM=7" >> /tmp/buildenv \
-  ;; \
   "arm64") \
   echo "export GOARCH=arm64" >> /tmp/buildenv \
-  ;; \
-  "amd64") \
-  echo "export GOARCH=amd64" >> /tmp/buildenv \
   ;; \
   *) \
   echo "export GOARCH=${TARGETARCH}" >> /tmp/buildenv \
