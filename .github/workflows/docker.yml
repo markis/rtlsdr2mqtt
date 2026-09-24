@@ -16,6 +16,7 @@ on:
 permissions:
   contents: read
   packages: write
+  id-token: write
 
 env:
   REGISTRY_IMAGE: ghcr.io/${{ github.repository }}
@@ -118,6 +119,7 @@ jobs:
           build-args: |
             VERSION=${{ needs.prepare.outputs.version }}
           labels: ${{ needs.prepare.outputs.labels }}
+          sbom: true
           outputs: ${{ env.BUILDX_OUTPUT }}
           cache-from: type=gha,scope=buildkit-${{ env.PLATFORM_PAIR }}
           # Fork PRs have a read-only GITHUB_TOKEN; ignore cache export failures there
@@ -162,6 +164,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create manifest list and push
+        id: manifest
         working-directory: /tmp/digests
         env:
           TAGS: ${{ needs.prepare.outputs.tags }}
@@ -176,6 +179,27 @@ jobs:
             args+=("${REGISTRY_IMAGE}@sha256:${digest}")
           done
           docker buildx imagetools create "${args[@]}"
+          first_tag=$(head -n1 <<< "$TAGS")
+          index_digest=$(docker buildx imagetools inspect --format '{{json .Manifest.Digest}}' "$first_tag" | tr -d '"')
+          echo "index_digest=${index_digest}" >> "$GITHUB_OUTPUT"
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v4
+
+      - name: Sign image and attestations
+        env:
+          INDEX_DIGEST: ${{ steps.manifest.outputs.index_digest }}
+        run: |
+          cosign sign --yes --recursive "${REGISTRY_IMAGE}@${INDEX_DIGEST}"
+
+      - name: Verify signature
+        env:
+          INDEX_DIGEST: ${{ steps.manifest.outputs.index_digest }}
+        run: |
+          cosign verify \
+            --certificate-identity-regexp "^https://github\.com/${{ github.repository }}/\.github/workflows/docker\.yml" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            "${REGISTRY_IMAGE}@${INDEX_DIGEST}"
 
       - name: Inspect image
         env:
