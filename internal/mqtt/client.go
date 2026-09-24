@@ -20,7 +20,12 @@ import (
 // DefaultRequestTimeout is the default bound on Publish, Subscribe, and Unsubscribe waits.
 const DefaultRequestTimeout = 10 * time.Second
 
-var ErrParseCACertificate = errors.New("failed to parse CA certificate")
+var (
+	ErrParseCACertificate = errors.New("failed to parse CA certificate")
+	// ErrConnectTimeout is returned when the broker does not complete the
+	// connection handshake within the configured ConnectTimeout.
+	ErrConnectTimeout = errors.New("failed to connect to MQTT broker: timed out")
+)
 
 // PahoClient wraps the Paho MQTT client.
 type PahoClient struct {
@@ -41,6 +46,18 @@ func NewClient(config *ClientConfig, logger *slog.Logger) (Client, error) {
 		logger = slog.Default()
 	}
 
+	// Apply defaults before copying into the struct; the struct copy is what
+	// the client's methods read, so late defaults would never take effect.
+	if config.KeepAlive == 0 {
+		config.KeepAlive = 60 * time.Second
+	}
+	if config.ConnectTimeout == 0 {
+		config.ConnectTimeout = 10 * time.Second
+	}
+	if config.RequestTimeout == 0 {
+		config.RequestTimeout = DefaultRequestTimeout
+	}
+
 	client := &PahoClient{
 		config:          *config,
 		logger:          logger,
@@ -55,17 +72,6 @@ func NewClient(config *ClientConfig, logger *slog.Logger) (Client, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to configure TLS: %w", err)
 		}
-	}
-
-	// Set default timeouts
-	if config.KeepAlive == 0 {
-		config.KeepAlive = 60 * time.Second
-	}
-	if config.ConnectTimeout == 0 {
-		config.ConnectTimeout = 10 * time.Second
-	}
-	if config.RequestTimeout == 0 {
-		config.RequestTimeout = DefaultRequestTimeout
 	}
 
 	// Create MQTT client options
@@ -108,7 +114,10 @@ func (c *PahoClient) Connect() error {
 	c.logger.Info("Connecting to MQTT broker", "host", c.config.Host, "port", c.config.Port)
 
 	token := c.client.Connect()
-	if token.WaitTimeout(c.config.ConnectTimeout) && token.Error() != nil {
+	if !token.WaitTimeout(c.config.ConnectTimeout) {
+		return fmt.Errorf("%w after %s", ErrConnectTimeout, c.config.ConnectTimeout)
+	}
+	if token.Error() != nil {
 		return fmt.Errorf("failed to connect to MQTT broker: %w", token.Error())
 	}
 

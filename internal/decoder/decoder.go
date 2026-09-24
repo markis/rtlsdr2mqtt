@@ -171,12 +171,12 @@ func (d *Decoder) Start(ctx context.Context) error {
 	}
 
 	// Each Decode call consumes exactly BlockSize2 bytes, so the sample
-	// stream must deliver blocks of that size: bufLen is in samples, two
-	// bytes (I+Q) each.
+	// stream must deliver blocks of that size. librtlsdr's async buf_len is
+	// in bytes of IQ data.
 	if cfg.BlockSize2 <= 0 {
 		return fmt.Errorf("%w: %d", ErrInvalidBlockSize, cfg.BlockSize2)
 	}
-	bufLen := uint32(cfg.BlockSize2 / 2) //nolint:gosec // BlockSize2 is a positive power-of-two byte count
+	bufLen := uint32(cfg.BlockSize2) //nolint:gosec // BlockSize2 is a positive power-of-two byte count
 
 	// Begin async sample delivery; blocks are dropped if the decode loop stalls.
 	streamChan, err := d.sdr.StartStreaming(bufLen, 0)
@@ -298,6 +298,14 @@ func (d *Decoder) decodeLoop(ctx context.Context, streamChan <-chan []byte) {
 			select {
 			case d.sampleSignal <- struct{}{}:
 			default:
+			}
+
+			// Decode reads exactly BlockSize2 input bytes; a short block
+			// (flaky USB transfer) would index out of range, so drop it.
+			if len(block) != d.decoder.Cfg.BlockSize2 {
+				d.logger.Warn("Dropping sample block with unexpected size",
+					"got", len(block), "want", d.decoder.Cfg.BlockSize2)
+				continue
 			}
 
 			// Swap digest maps

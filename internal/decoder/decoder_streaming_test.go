@@ -47,8 +47,9 @@ func TestDecoderStartStreamingParams(t *testing.T) {
 	ensureDecoderStarted(t, d)
 	defer func() { _ = d.Stop() }()
 
-	// Decode consumes exactly BlockSize2 bytes per call, delivered as samples (2 bytes each).
-	wantBufLen := uint32(d.decoder.Cfg.BlockSize2 / 2)
+	// Decode consumes exactly BlockSize2 bytes per call; librtlsdr's async
+	// buf_len is in bytes, so the requested buffer size equals BlockSize2.
+	wantBufLen := uint32(d.decoder.Cfg.BlockSize2)
 	if mock.startBufLen != wantBufLen {
 		t.Errorf("StartStreaming bufLen = %d, want %d", mock.startBufLen, wantBufLen)
 	}
@@ -173,5 +174,34 @@ func TestDecoderHandlesStreamClose(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("decoder did not report stream closure in time")
+	}
+}
+
+func TestDecodeLoopDropsShortBlocks(t *testing.T) {
+	mock := &mockSDR{}
+	d := newTestDecoder(t, mock)
+	d.watchdogTimeout = 10 * time.Second // keep the watchdog out of the way
+	ensureDecoderStarted(t, d)
+	defer func() { _ = d.Stop() }()
+
+	msgChan, errChan, _ := d.Channels()
+
+	// A short block (flaky USB transfer) must be dropped, not panic Decode.
+	mock.push(make([]byte, d.decoder.Cfg.BlockSize2/2))
+	// A correctly sized block of zero samples decodes without messages.
+	mock.push(make([]byte, d.decoder.Cfg.BlockSize2))
+
+	// Give the loop time to consume both blocks; assert no panic and no error.
+	time.Sleep(200 * time.Millisecond)
+
+	select {
+	case err := <-errChan:
+		t.Fatalf("unexpected decoder error: %v", err)
+	default:
+	}
+	select {
+	case msg := <-msgChan:
+		t.Fatalf("unexpected message from zero samples: %+v", msg)
+	default:
 	}
 }

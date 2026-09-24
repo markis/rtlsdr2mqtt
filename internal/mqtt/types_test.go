@@ -2,6 +2,7 @@ package mqtt
 
 import (
 	"encoding/json"
+	"log/slog"
 	"testing"
 	"time"
 )
@@ -17,7 +18,34 @@ const (
 	testPlatform    = "sensor"
 	testDeviceClass = "energy"
 	testStateClass  = "total_increasing"
+	testClientID    = "test-client"
 )
+
+func TestNewClientAppliesDefaultTimeouts(t *testing.T) {
+	// The controller builds ClientConfig without any timeout fields; the
+	// client must default them before use or every operation times out at 0s.
+	config := &ClientConfig{Host: "localhost", Port: 1883, ClientID: testClientID}
+	logger := slog.New(slog.DiscardHandler)
+
+	client, err := NewClient(config, logger)
+	if err != nil {
+		t.Fatalf("NewClient() failed: %v", err)
+	}
+	pahoClient, ok := client.(*PahoClient)
+	if !ok {
+		t.Fatalf("NewClient() returned %T, want *PahoClient", client)
+	}
+
+	if pahoClient.config.RequestTimeout != DefaultRequestTimeout {
+		t.Errorf("RequestTimeout = %v, want %v", pahoClient.config.RequestTimeout, DefaultRequestTimeout)
+	}
+	if pahoClient.config.ConnectTimeout != 10*time.Second {
+		t.Errorf("ConnectTimeout = %v, want 10s", pahoClient.config.ConnectTimeout)
+	}
+	if pahoClient.config.KeepAlive != 60*time.Second {
+		t.Errorf("KeepAlive = %v, want 60s", pahoClient.config.KeepAlive)
+	}
+}
 
 func TestStatePayloadJSON(t *testing.T) {
 	payload := StatePayload{
