@@ -2,7 +2,6 @@ package decoder
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"os"
 	"testing"
@@ -29,8 +28,27 @@ func newTestDecoder(t *testing.T, mock *mockSDR) *Decoder {
 		},
 	}
 	d := NewDecoder(cfg, newTestLogger())
-	d.sdr = mock
+	d.SetDeviceSource(staticAcquirer(mock))
 	return d
+}
+
+// newRecoveryDecoder builds a decoder wired to a scripted acquirer, an
+// instant fake sleeper, and a recording log handler for recovery tests.
+func newRecoveryDecoder(t *testing.T, acquirer *fakeAcquirer) (*Decoder, *fakeSleeper, *recordingHandler) {
+	t.Helper()
+	cfg := &config.Config{
+		SDR: config.SDRConfig{USBDevice: ""},
+		Meters: []config.MeterConfig{
+			{ID: testMeterID, Protocol: testProtocolSCM},
+		},
+	}
+	handler := newRecordingHandler()
+	logger := slog.New(handler)
+	d := NewDecoder(cfg, logger)
+	d.SetDeviceSource(acquirer)
+	sleeper := &fakeSleeper{}
+	d.SetSleeper(sleeper.sleep)
+	return d, sleeper, handler
 }
 
 // ensureDecoderStarted starts the decoder, failing the test on error.
@@ -110,18 +128,22 @@ func TestWatchdogReportsStall(t *testing.T) {
 	ensureDecoderStarted(t, d)
 	defer func() { _ = d.Stop() }()
 
-	msgChan, errChan, _ := d.Channels()
+	_, errChan, _ := d.Channels()
 
-	// No blocks pushed: watchdog must fire and report the stall.
+	// No blocks pushed: the watchdog stall is loss-class, so the decoder
+	// recovers in-process instead of reporting on errChan. The same mock is
+	// re-acquired immediately and decoding continues.
 	select {
 	case err := <-errChan:
-		if !errors.Is(err, ErrSampleFlowStalled) {
-			t.Errorf("expected ErrSampleFlowStalled, got %v", err)
-		}
-	case msg := <-msgChan:
-		t.Fatalf("unexpected message during stall: %+v", msg)
-	case <-time.After(5 * time.Second):
-		t.Fatal("watchdog did not report the stall in time")
+		t.Fatalf("watchdog stall must trigger recovery, not an error report: %v", err)
+	case <-time.After(2 * time.Second):
+	}
+
+	if !d.IsRunning() {
+		t.Error("expected decoder still running after stall recovery")
+	}
+	if !mock.isStreaming() {
+		t.Error("expected streaming resumed after stall recovery")
 	}
 }
 
@@ -154,26 +176,34 @@ func TestWatchdogSilentWhenSamplesFlow(t *testing.T) {
 func TestDecoderHandlesStreamClose(t *testing.T) {
 	mock := &mockSDR{}
 	d := newTestDecoder(t, mock)
+	d.watchdogTimeout = 10 * time.Second // keep the watchdog out of the way
 	ensureDecoderStarted(t, d)
 	defer func() { _ = d.Stop() }()
 
 	_, errChan, _ := d.Channels()
 
 	// Close the stream out from under the decoder (simulates device death).
+	// An unclassified stream end is loss-class: the decoder recovers
+	// in-process instead of reporting on errChan.
 	mock.mu.Lock()
 	ch := mock.streamChan
+	errCh2 := mock.streamErrs
 	mock.streaming = false
 	mock.mu.Unlock()
+	close(errCh2)
 	close(ch)
 
-	// The decoder must report the closure so the controller restarts it.
 	select {
 	case err := <-errChan:
-		if !errors.Is(err, ErrSampleStreamClosed) {
-			t.Errorf("expected ErrSampleStreamClosed, got %v", err)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("decoder did not report stream closure in time")
+		t.Fatalf("stream closure must trigger recovery, not an error report: %v", err)
+	case <-time.After(2 * time.Second):
+	}
+
+	if !d.IsRunning() {
+		t.Error("expected decoder still running after stream-closure recovery")
+	}
+	if !mock.isStreaming() {
+		t.Error("expected streaming resumed after stream-closure recovery")
 	}
 }
 

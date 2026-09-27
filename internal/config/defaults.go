@@ -5,6 +5,11 @@ import "github.com/creasty/defaults"
 // DefaultGainMode is the default SDR gain mode.
 const DefaultGainMode = "auto"
 
+// DefaultDeviceRetrySeconds is the default cap for RTL-SDR re-enumeration
+// poll delays during device recovery. Values below 1 second are rejected at
+// load time; hand-constructed configs fall back to this default.
+const DefaultDeviceRetrySeconds = 5
+
 // deviceClassEnergy is the energy device class value.
 const deviceClassEnergy = "energy"
 
@@ -25,6 +30,7 @@ func DefaultConfig() *Config {
 		config.SDR.GainMode = DefaultGainMode
 		config.SDR.Gain = 0
 		config.SDR.AGCEnabled = true
+		config.SDR.DeviceRetrySeconds = DefaultDeviceRetrySeconds
 		config.MQTT.Port = 1883
 		config.MQTT.BaseTopic = "meters"
 		config.MQTT.HomeAssistant.Enabled = true

@@ -1,5 +1,7 @@
 package config
 
+import "time"
+
 // Config represents the complete application configuration.
 type Config struct {
 	General GeneralConfig `json:"general" yaml:"general"`
@@ -18,11 +20,22 @@ type GeneralConfig struct {
 // SDRConfig holds SDR device configuration.
 // USBDevice is a USB device ID in BUS:DEV format, or empty string for auto-detect.
 type SDRConfig struct {
-	USBDevice      string `json:"usb_device"      yaml:"usb_device"      default:""`
-	FreqCorrection int    `json:"freq_correction" yaml:"freq_correction" default:"0"`    // PPM correction
-	GainMode       string `json:"gain_mode"       yaml:"gain_mode"       default:"auto"` // auto or manual
-	Gain           int    `json:"gain"            yaml:"gain"            default:"0"`    // tenths of dB (e.g., 496 = 49.6 dB)
-	AGCEnabled     bool   `json:"agc_enabled"     yaml:"agc_enabled"     default:"true"` // RTL2832 AGC
+	USBDevice          string `json:"usb_device"           yaml:"usb_device"           default:""`
+	FreqCorrection     int    `json:"freq_correction"      yaml:"freq_correction"      default:"0"`    // PPM correction
+	GainMode           string `json:"gain_mode"            yaml:"gain_mode"            default:"auto"` // auto or manual
+	Gain               int    `json:"gain"                 yaml:"gain"                 default:"0"`    // tenths of dB (e.g., 496 = 49.6 dB)
+	AGCEnabled         bool   `json:"agc_enabled"          yaml:"agc_enabled"          default:"true"` // RTL2832 AGC
+	DeviceRetrySeconds int    `json:"device_retry_seconds" yaml:"device_retry_seconds" default:"5"`    // Recovery poll cap, seconds
+}
+
+// DeviceRetryInterval returns the recovery poll cap for RTL-SDR
+// re-enumeration as a duration. LoadConfig rejects values below 1 second;
+// hand-constructed configs fall back to DefaultDeviceRetrySeconds here.
+func (s SDRConfig) DeviceRetryInterval() time.Duration {
+	if s.DeviceRetrySeconds < 1 {
+		return time.Duration(DefaultDeviceRetrySeconds) * time.Second
+	}
+	return time.Duration(s.DeviceRetrySeconds) * time.Second
 }
 
 // TLSConfig holds TLS/SSL configuration for MQTT connections.

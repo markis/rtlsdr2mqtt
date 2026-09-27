@@ -4,6 +4,7 @@ import (
 	"errors"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/creasty/defaults"
 )
@@ -479,5 +480,69 @@ func TestFindMeterByID(t *testing.T) {
 				t.Errorf("FindMeterByID(%s) returned non-nil meter when not found", tt.id)
 			}
 		})
+	}
+}
+
+func TestDeviceRetrySecondsDefault(t *testing.T) {
+	config := &Config{}
+	if err := defaults.Set(config); err != nil {
+		t.Fatalf("Failed to set defaults: %v", err)
+	}
+
+	if config.SDR.DeviceRetrySeconds != DefaultDeviceRetrySeconds {
+		t.Errorf("Expected device_retry_seconds %d, got %d", DefaultDeviceRetrySeconds, config.SDR.DeviceRetrySeconds)
+	}
+
+	if config.SDR.DeviceRetryInterval() != 5*time.Second {
+		t.Errorf("Expected device retry interval 5s, got %v", config.SDR.DeviceRetryInterval())
+	}
+
+	if got := DefaultConfig().SDR.DeviceRetrySeconds; got != DefaultDeviceRetrySeconds {
+		t.Errorf("Expected DefaultConfig device_retry_seconds %d, got %d", DefaultDeviceRetrySeconds, got)
+	}
+}
+
+func TestValidateDeviceRetrySeconds(t *testing.T) {
+	tests := []struct {
+		name      string
+		seconds   int
+		expectErr bool
+	}{
+		{"default value", 5, false},
+		{"minimum value", 1, false},
+		{"large value", 60, false},
+		{"zero rejected", 0, true},
+		{"negative rejected", -3, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := DefaultConfig()
+			config.SDR.DeviceRetrySeconds = tt.seconds
+			config.MQTT.Host = testMQTTHost
+			config.Meters = []MeterConfig{
+				{ID: "12345", Name: testMeterName, Protocol: testProtocol},
+			}
+
+			err := validateConfig(config)
+			if tt.expectErr && !errors.Is(err, ErrInvalidDeviceRetry) {
+				t.Errorf("Expected ErrInvalidDeviceRetry, got %v", err)
+			}
+			if !tt.expectErr && err != nil {
+				t.Errorf("Expected no error, got %v", err)
+			}
+		})
+	}
+}
+
+func TestDeviceRetryIntervalFallback(t *testing.T) {
+	// Hand-constructed configs bypass LoadConfig validation; the interval
+	// helper must still return a sane value.
+	if got := (SDRConfig{}).DeviceRetryInterval(); got != 5*time.Second {
+		t.Errorf("Expected fallback interval 5s, got %v", got)
+	}
+
+	if got := (SDRConfig{DeviceRetrySeconds: 10}).DeviceRetryInterval(); got != 10*time.Second {
+		t.Errorf("Expected interval 10s, got %v", got)
 	}
 }

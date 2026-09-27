@@ -22,6 +22,7 @@ func NewSDR(cfg *config.Config, logger *slog.Logger) (SDR, error) {
 
 	// Create device with the resolved index
 	device := NewRTLSDRDevice(deviceIndex)
+	device.SetLogger(logger)
 
 	logger.Info("Using direct RTL-SDR USB access", "device_index", deviceIndex)
 

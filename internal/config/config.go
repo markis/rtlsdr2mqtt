@@ -31,6 +31,7 @@ var (
 	ErrMeterIDEmpty       = errors.New("meter ID cannot be empty")
 	ErrMeterNameEmpty     = errors.New("meter name cannot be empty")
 	ErrMeterProtocolEmpty = errors.New("meter protocol cannot be empty")
+	ErrInvalidDeviceRetry = errors.New("sdr.device_retry_seconds must be at least 1")
 	ErrInvalidProtocol    = errors.New("invalid meter protocol")
 	ErrInvalidDeviceClass = errors.New("invalid device class")
 	ErrInvalidStateClass  = errors.New("invalid state class")
@@ -198,6 +199,11 @@ func validateConfig(config *Config) error {
 	if !slices.Contains(ValidVerbosityLevels(), config.General.Verbosity) {
 		return fmt.Errorf("%w '%s', must be one of: %v",
 			ErrInvalidVerbosity, config.General.Verbosity, ValidVerbosityLevels())
+	}
+
+	// Validate the device re-enumeration poll interval for recovery mode
+	if config.SDR.DeviceRetrySeconds < 1 {
+		return fmt.Errorf("%w, got %d", ErrInvalidDeviceRetry, config.SDR.DeviceRetrySeconds)
 	}
 
 	// Validate each meter

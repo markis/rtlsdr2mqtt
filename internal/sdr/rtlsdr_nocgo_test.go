@@ -77,10 +77,10 @@ func TestRTLSDRDevice_NoCGO_IO(t *testing.T) {
 	}
 
 	// Test StartStreaming
-	if ch, err := device.StartStreaming(0, 0); !errors.Is(err, ErrNoCGO) {
+	if stream, err := device.StartStreaming(0, 0); !errors.Is(err, ErrNoCGO) {
 		t.Errorf("StartStreaming() error = %v, want %v", err, ErrNoCGO)
-	} else if ch != nil {
-		t.Errorf("StartStreaming() channel = %v, want nil", ch)
+	} else if stream.Samples != nil || stream.Errors != nil {
+		t.Errorf("StartStreaming() stream = %+v, want zero Stream", stream)
 	}
 
 	// Test StopStreaming

@@ -85,6 +85,15 @@ func New(cfg *config.Config, logger *slog.Logger) (*Controller, error) {
 	// Setup decoder (direct rtlamr integration with SDR)
 	controller.decoder = decoder.NewDecoder(cfg, logger)
 
+	// Refresh the health check heartbeat on every successful device
+	// (re-)acquisition, so a recovered dongle is observable before the next
+	// meter transmission. Failed acquisition attempts never touch it.
+	controller.decoder.SetOnDeviceAcquired(func() {
+		if err := controller.writeHealthCheck(); err != nil {
+			logger.Warn("Failed to write health check after device acquisition", "error", err)
+		}
+	})
+
 	return controller, nil
 }
 

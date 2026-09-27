@@ -62,6 +62,7 @@ sdr:
   gain_mode: auto           # auto or manual
   gain: 0                   # Gain in tenths of dB (e.g., 496 = 49.6 dB)
   agc_enabled: true         # RTL2832 AGC
+  device_retry_seconds: 5   # Re-enumeration poll cap (seconds, >= 1) for USB recovery
 
 mqtt:
   host: localhost
@@ -119,9 +120,15 @@ meters:
 The application self-recovers from upstream outages instead of waiting for the container health check to restart it:
 
 - **MQTT publishes are bounded.** Publishes, subscribes, and unsubscribes time out after 10 seconds. During a broker outage, readings still log and the health check heartbeat (touched on every decoded reading) stays fresh; failed publishes are logged as errors and retried on the next reading.
-- **Sample-flow watchdog.** If the RTL-SDR stops delivering samples for 30 seconds (wedged USB pipe, dead dongle), the decoder is stopped and restarted automatically, with an error-level log naming the cause.
-- **Unexpected stream closure.** If the device stops on its own, the decoder restarts automatically.
-- **Health check file.** `HEALTHCHECK_FILE` is touched on each decoded reading. The stock `scripts/healthcheck.sh` fails when the file is older than 5 minutes. This is the last-resort backstop: it only trips if self-recovery has already failed.
+- **Sample-flow watchdog.** If the RTL-SDR stops delivering samples for 30 seconds (wedged USB pipe, dead dongle), the decoder stops the stale stream and enters USB recovery, with an error-level log naming the cause.
+- **Unexpected stream closure.** If the device stops on its own, the decoder enters USB recovery.
+- **USB re-enumeration recovery.** When the dongle drops off the USB bus (for example an RTL2838 that re-enumerates at a different `/dev/bus/usb` node), the app detects the loss, closes the stale libusb handle, and polls for the device to reappear by fresh USB enumeration (VID:PID based, never the old node path). Polls back off 1s → 2s → 5s → 10s, capped at `sdr.device_retry_seconds` (default 5s, minimum 1s). On success it reopens the device, reapplies the full startup configuration (center frequency, sample rate, gain/AGC, PPM), resumes decoding in-process, and touches the health check file once. Expected logs:
+  - `level=WARN msg="RTL-SDR lost; entering re-enumeration recovery" error=<cause>`
+  - `level=INFO msg="RTL-SDR recovery attempt failed; retrying" attempt=<n> retry_in=<delay> error=<error>` (one line per failed attempt)
+  - `level=INFO msg="RTL-SDR re-acquired" elapsed=<duration> device=<identity> attempt=<n>`
+- **Health check file.** `HEALTHCHECK_FILE` is touched on each decoded reading and once per successful device (re-)acquisition. The stock `scripts/healthcheck.sh` fails when the file is older than 5 minutes. This is the last-resort backstop: it only trips if self-recovery has already failed.
+
+Limits: recovery selects the same logical device startup would (configured index, else first available RTL-SDR); with several matching dongles the first enumerated one wins. A physically present but unresponsive dongle may keep its USB claim held, in which case reopening fails until the device actually re-enumerates; the liveness probe then restarts the container. Software recovery hides dropout symptoms, not the underlying hardware cause — cable, port, hub, and power issues are still worth fixing.
 
 ## Development
 

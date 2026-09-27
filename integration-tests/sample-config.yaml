@@ -9,6 +9,7 @@ sdr:
   gain_mode: auto
   gain: 0
   agc_enabled: true
+  device_retry_seconds: 5
 
 mqtt:
   host: mosquitto

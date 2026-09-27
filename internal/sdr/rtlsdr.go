@@ -21,6 +21,7 @@ import "C" //nolint:gocritic // CGO import is separate from standard imports
 
 import (
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 	"unsafe" //nolint:gocritic // Required for CGO, not a duplicate import
@@ -39,13 +40,16 @@ type RTLSDRDevice struct {
 	deviceIndex uint32
 	mu          sync.Mutex
 	isOpen      bool
+	logger      *slog.Logger
 
 	// Streaming state, guarded by mu.
-	streaming     bool
-	streamChan    chan []byte
-	callbackID    uintptr
-	asyncDone     chan struct{} // closed when rtlsdr_read_async returns
-	cancelTimeout time.Duration
+	streaming       bool
+	streamChan      chan []byte
+	streamErrs      chan error
+	closeStreamOnce sync.Once
+	callbackID      uintptr
+	asyncDone       chan struct{} // closed when rtlsdr_read_async returns
+	cancelTimeout   time.Duration
 }
 
 // NewRTLSDRDevice creates a new RTL-SDR device instance with the specified device index.
@@ -53,7 +57,18 @@ func NewRTLSDRDevice(deviceIndex uint32) *RTLSDRDevice {
 	return &RTLSDRDevice{
 		deviceIndex:   deviceIndex,
 		cancelTimeout: 5 * time.Second,
+		logger:        slog.Default(),
 	}
+}
+
+// SetLogger replaces the logger used for device-lifecycle messages.
+func (d *RTLSDRDevice) SetLogger(logger *slog.Logger) {
+	if logger == nil {
+		return
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.logger = logger
 }
 
 // GetDeviceCount returns the number of RTL-SDR devices found.
@@ -235,19 +250,22 @@ func (d *RTLSDRDevice) ResetBuffer() error {
 	return nil
 }
 
-// StartStreaming begins async sample delivery to the returned channel.
-// bufNum is the number of librtlsdr transfer buffers (0 uses the default: 15).
-// bufLen is the size of each buffer in samples (0 uses the default: 16384).
-// Sample blocks are dropped when the consumer cannot keep up.
-func (d *RTLSDRDevice) StartStreaming(bufLen, bufNum uint32) (<-chan []byte, error) {
+// StartStreaming begins async sample delivery. The returned stream's Samples
+// channel receives IQ blocks and Errors receives at most one terminal stream
+// error (for example a loss-class device failure) before Samples closes;
+// Errors also closes so consumers can distinguish a failed stream from a
+// clean stop. bufNum is the number of librtlsdr transfer buffers (0 uses the
+// default: 15). bufLen is the size of each buffer in samples (0 uses the
+// default: 16384). Sample blocks are dropped when the consumer cannot keep up.
+func (d *RTLSDRDevice) StartStreaming(bufLen, bufNum uint32) (Stream, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	if !d.isOpen {
-		return nil, ErrDeviceNotOpen
+		return Stream{}, ErrDeviceNotOpen
 	}
 	if d.streaming {
-		return nil, ErrAlreadyStreaming
+		return Stream{}, ErrAlreadyStreaming
 	}
 
 	callback := func(samples []byte) {
@@ -268,24 +286,53 @@ func (d *RTLSDRDevice) StartStreaming(bufLen, bufNum uint32) (<-chan []byte, err
 	// Small buffer: a few blocks of slack for the consumer, then drop. The
 	// decoder tolerates dropped blocks far better than a blocked C read loop.
 	d.streamChan = make(chan []byte, 4)
+	d.streamErrs = make(chan error, 1)
+	d.closeStreamOnce = sync.Once{}
 	d.asyncDone = make(chan struct{})
 	d.streaming = true
 
 	go func() {
-		defer close(d.asyncDone)
-		// Note: This call blocks until rtlsdr_cancel_async is accepted.
+		// Note: This call blocks until rtlsdr_cancel_async is accepted, or
+		// until the read loop dies on its own (lost device, bus error).
 		ret := C.call_rtlsdr_read_async(
 			d.dev,
 			unsafe.Pointer(d.callbackID), //nolint:govet // Converting uintptr to unsafe.Pointer for CGO callback context
 			C.uint32_t(bufNum),
 			C.uint32_t(bufLen),
 		)
-		if ret != 0 {
+		// Signal exit first: stopStreamLocked waits on this channel, and the
+		// closed channel takes priority over further cancel attempts there.
+		close(d.asyncDone)
+		if ret == 0 {
 			return
 		}
+		// The read loop died without cancellation: the device is lost or the
+		// USB pipe failed. Deliver the classified error before closing the
+		// sample channel so consumers leave recovery to the state machine
+		// instead of stalling silently on a dead handle.
+		d.mu.Lock()
+		defer d.mu.Unlock()
+		code := int(ret)
+		if err := ClassifyLibusbError(code); err != nil {
+			d.logger.Error("RTL-SDR sample stream lost device", "libusb_error", LibusbErrorName(code), "code", code)
+			d.streamErrs <- err
+		} else {
+			d.logger.Error("RTL-SDR sample stream failed", "libusb_error", LibusbErrorName(code), "code", code)
+			d.streamErrs <- fmt.Errorf("%w: libusb error %s (%d)", ErrAsyncReadFailed, LibusbErrorName(code), code)
+		}
+		d.closeStreamLocked()
 	}()
 
-	return d.streamChan, nil
+	return Stream{Samples: d.streamChan, Errors: d.streamErrs}, nil
+}
+
+// closeStreamLocked closes the sample and error channels exactly once. The
+// caller must hold d.mu.
+func (d *RTLSDRDevice) closeStreamLocked() {
+	d.closeStreamOnce.Do(func() {
+		close(d.streamChan)
+		close(d.streamErrs)
+	})
 }
 
 // StopStreaming cancels the async sample reader and waits for it to exit.
@@ -302,37 +349,72 @@ func (d *RTLSDRDevice) StopStreaming() error {
 
 	err := d.stopStreamLocked()
 	if err == nil {
-		close(d.streamChan)
+		d.closeStreamLocked()
 	}
 	return err
 }
 
 // stopStreamLocked cancels and joins the async reader. The caller must hold d.mu.
-// On timeout the streaming flag stays set so Close refuses to free a device
-// the C read loop still uses. It must not close streamChan in that case:
-// stale references from the live callback would panic on send.
+// An already-exited read loop (asyncDone closed, for example after device loss)
+// is detected first so cancellation is never attempted against a dead handle:
+// the closed channel takes priority over further cancel attempts. On timeout
+// the streaming flag stays set so Close refuses to free a device the C read
+// loop still uses. It must not close streamChan in that case: stale references
+// from the live callback would panic on send.
 func (d *RTLSDRDevice) stopStreamLocked() error {
 	callbackMu.Lock()
 	delete(callbackRefs, d.callbackID)
 	callbackMu.Unlock()
 	d.callbackID = 0
 
+	// Fast path: the read loop already exited (for example it died on device
+	// loss before cancellation was ever issued).
+	select {
+	case <-d.asyncDone:
+		d.streaming = false
+		return nil
+	default:
+	}
+
 	timeout := time.After(d.cancelTimeout)
 	ticker := time.NewTicker(50 * time.Millisecond)
 	defer ticker.Stop()
 
+	var cancelErr error
 	for {
 		select {
 		case <-d.asyncDone:
 			d.streaming = false
 			return nil
 		case <-ticker.C:
-			// Retry until the C read loop accepts the cancellation.
-			ret := C.rtlsdr_cancel_async(d.dev)
-			if ret != 0 {
-				return fmt.Errorf("%w: error code %d", ErrCancelAsyncFailed, ret)
+			// Re-check before issuing cancellation: the read loop may have
+			// exited since the last check; rtlsdr_cancel_async fails against
+			// a dead handle, so it must not mask an exited loop.
+			select {
+			case <-d.asyncDone:
+				d.streaming = false
+				return nil
+			default:
+			}
+			// Retry until the C read loop accepts the cancellation. A failing
+			// cancel is kept as context, but the loop persists until
+			// asyncDone or the timeout: this keeps the streaming flag (and
+			// the Close guard) accurate on a wedged device.
+			if ret := C.rtlsdr_cancel_async(d.dev); ret != 0 {
+				cancelErr = fmt.Errorf("%w: error code %d", ErrCancelAsyncFailed, int(ret))
 			}
 		case <-timeout:
+			// Final check: the read loop may have exited concurrently with
+			// the timeout. Only then is a timeout reported.
+			select {
+			case <-d.asyncDone:
+				d.streaming = false
+				return nil
+			default:
+			}
+			if cancelErr != nil {
+				return fmt.Errorf("%w: %w", ErrStreamStopTimeout, cancelErr)
+			}
 			return ErrStreamStopTimeout
 		}
 	}

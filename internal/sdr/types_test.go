@@ -71,6 +71,21 @@ func TestErrorDefinitions(t *testing.T) {
 			err:  ErrStreamStopTimeout,
 			want: "timed out stopping the sample stream",
 		},
+		{
+			name: "ErrDeviceLost",
+			err:  ErrDeviceLost,
+			want: "RTL-SDR device lost",
+		},
+		{
+			name: "ErrDeviceAbsent",
+			err:  ErrDeviceAbsent,
+			want: "no RTL-SDR device present on the USB bus",
+		},
+		{
+			name: "ErrAsyncReadFailed",
+			err:  ErrAsyncReadFailed,
+			want: "async sample read failed",
+		},
 	}
 
 	for _, tt := range tests {

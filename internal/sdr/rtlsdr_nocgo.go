@@ -3,7 +3,10 @@
 // Package sdr provides a stub implementation when CGO is not available.
 package sdr
 
-import "errors"
+import (
+	"errors"
+	"log/slog"
+)
 
 // ErrNoCGO is returned when trying to use direct RTL-SDR access without CGO.
 var ErrNoCGO = errors.New("direct RTL-SDR access requires CGO (build with CGO_ENABLED=1)")
@@ -19,6 +22,9 @@ func NewRTLSDRDevice(deviceIndex uint32) *RTLSDRDevice {
 		deviceIndex: deviceIndex,
 	}
 }
+
+// SetLogger is a no-op without CGO.
+func (d *RTLSDRDevice) SetLogger(_ *slog.Logger) {}
 
 // GetDeviceCount always returns 0 without CGO.
 func (d *RTLSDRDevice) GetDeviceCount() uint32 {
@@ -76,8 +82,8 @@ func (d *RTLSDRDevice) ResetBuffer() error {
 }
 
 // StartStreaming returns ErrNoCGO.
-func (d *RTLSDRDevice) StartStreaming(_, _ uint32) (<-chan []byte, error) {
-	return nil, ErrNoCGO
+func (d *RTLSDRDevice) StartStreaming(_, _ uint32) (Stream, error) {
+	return Stream{}, ErrNoCGO
 }
 
 // StopStreaming returns ErrNoCGO.

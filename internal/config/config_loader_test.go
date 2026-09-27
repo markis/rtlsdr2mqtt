@@ -441,3 +441,71 @@ func TestValidateConfigEmptyMeterProtocol(t *testing.T) {
 		t.Error("Expected error for empty meter protocol")
 	}
 }
+
+func TestLoadConfigDeviceRetrySeconds(t *testing.T) {
+	tests := []struct {
+		name        string
+		sdrSection  string
+		wantSeconds int
+		expectErr   bool
+	}{
+		{
+			name:        "omitted keeps default",
+			sdrSection:  "  freq_correction: 0\n",
+			wantSeconds: DefaultDeviceRetrySeconds,
+			expectErr:   false,
+		},
+		{
+			name:        "explicit value honored",
+			sdrSection:  "  freq_correction: 0\n  device_retry_seconds: 10\n",
+			wantSeconds: 10,
+			expectErr:   false,
+		},
+		{
+			name:        "zero rejected",
+			sdrSection:  "  freq_correction: 0\n  device_retry_seconds: 0\n",
+			wantSeconds: 0,
+			expectErr:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			configPath := filepath.Join(tmpDir, "test_config.yaml")
+
+			configContent := `general:
+  verbosity: info
+sdr:
+` + tt.sdrSection + `mqtt:
+  host: "localhost"
+  port: 1883
+  base_topic: "meters"
+meters:
+  - id: "12345678"
+    name: "Test Meter"
+    protocol: "scm+"
+    device_class: "energy"
+    state_class: "total_increasing"
+    unit_of_measurement: "kWh"
+`
+			if err := os.WriteFile(configPath, []byte(configContent), 0o600); err != nil {
+				t.Fatalf("Failed to write test config: %v", err)
+			}
+
+			config, err := LoadConfig(configPath)
+			if tt.expectErr {
+				if !errors.Is(err, ErrInvalidDeviceRetry) {
+					t.Errorf("Expected ErrInvalidDeviceRetry, got %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("LoadConfig failed: %v", err)
+			}
+			if config.SDR.DeviceRetrySeconds != tt.wantSeconds {
+				t.Errorf("Expected device_retry_seconds %d, got %d", tt.wantSeconds, config.SDR.DeviceRetrySeconds)
+			}
+		})
+	}
+}
